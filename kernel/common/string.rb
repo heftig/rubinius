@@ -41,7 +41,7 @@ class String
   end
 
   def initialize(arg = undefined)
-    replace arg unless arg.equal?(undefined)
+    replace arg unless undefined.equal?(arg)
     self
   end
 
@@ -111,7 +111,7 @@ class String
   def [](index, other = undefined)
     Rubinius.primitive :string_aref
 
-    unless other.equal?(undefined)
+    unless undefined.equal?(other)
       if index.kind_of?(Fixnum) && other.kind_of?(Fixnum)
         return substring(index, other)
       elsif index.kind_of? Regexp
@@ -300,8 +300,8 @@ class String
     return self
   end
 
-  def chars
-    return to_enum :chars unless block_given?
+  def each_char
+    return to_enum :each_char unless block_given?
     # TODO: Use Encodings for KCODE in 1.8 mode
     if Rubinius.kcode == :UTF8 and Rubinius.ruby18?
       scan(/./u) do |c|
@@ -319,10 +319,10 @@ class String
     end
   end
 
-  alias_method :each_char, :chars
+  alias_method :chars, :each_char
 
-  def bytes
-    return to_enum :bytes unless block_given?
+  def each_byte
+    return to_enum :each_byte unless block_given?
     i = 0
     while i < @num_bytes do
       yield @data.get_byte(i)
@@ -331,7 +331,7 @@ class String
     self
   end
 
-  alias_method :each_byte, :bytes
+  alias_method :bytes, :each_byte
 
   def empty?
     @num_bytes == 0
@@ -604,7 +604,7 @@ class String
   end
 
   def sub(pattern, replacement=undefined)
-    if replacement.equal?(undefined) and !block_given?
+    if undefined.equal?(replacement) and !block_given?
       raise ArgumentError, "wrong number of arguments (1 for 2)"
     end
 
@@ -617,7 +617,7 @@ class String
 
       Regexp.last_match = match
 
-      if replacement.equal?(undefined)
+      if undefined.equal?(replacement)
         replacement = yield(match[0].dup).to_s
         out.taint if replacement.tainted?
         out.append(replacement).append(match.post_match)

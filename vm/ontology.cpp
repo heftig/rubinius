@@ -61,7 +61,9 @@
 #include "environment.hpp"
 #include "configuration.hpp"
 #include "config.h"
-#include "revision.h"
+#include "paths.h"
+#include "release.h"
+#include "version.h"
 
 #include "ontology.hpp"
 
@@ -143,7 +145,7 @@ namespace rubinius {
     // Now do Object
     Class* basicobject = 0;
     Class* object;
-    if(!LANGUAGE_18_ENABLED(state)) {
+    if(!LANGUAGE_18_ENABLED) {
       basicobject = ontology::new_basic_class(state, force_as<Class>(cNil));
       GO(basicobject).set(basicobject);
       basicobject->set_object_type(state, BasicObjectType);
@@ -171,7 +173,7 @@ namespace rubinius {
     G(array)->set_object_type(state, ArrayType);
 
     // Create WeakRef
-    if(!LANGUAGE_18_ENABLED(state)) {
+    if(!LANGUAGE_18_ENABLED) {
       GO(cls_weakref).set(ontology::new_basic_class(state, basicobject));
     } else {
       GO(cls_weakref).set(ontology::new_basic_class(state, object));
@@ -224,7 +226,7 @@ namespace rubinius {
      */
 
     // BasicObject's SingletonClass instance has Class for a superclass
-    if(!LANGUAGE_18_ENABLED(state)) {
+    if(!LANGUAGE_18_ENABLED) {
       SingletonClass::attach(state, basicobject, cls);
     }
 
@@ -237,7 +239,7 @@ namespace rubinius {
     SingletonClass::attach(state, cls, sc);
 
     // See?
-    if(!LANGUAGE_18_ENABLED(state)) {
+    if(!LANGUAGE_18_ENABLED) {
       assert(basicobject->superclass() == cNil);
       assert(object->superclass() == basicobject);
     } else {
@@ -265,7 +267,7 @@ namespace rubinius {
 
     // Now, finish initializing the basic Class/Module
     G(object)->setup(state, "Object");
-    if(!LANGUAGE_18_ENABLED(state)) {
+    if(!LANGUAGE_18_ENABLED) {
       G(basicobject)->setup(state, "BasicObject", G(object));
     }
     G(klass)->setup(state, "Class");
@@ -480,6 +482,8 @@ namespace rubinius {
       G(rubinius)->set_const(state, "KERNEL_PATH", String::create(state, path.c_str()));
       path = prefix + RBX_LIB_PATH;
       G(rubinius)->set_const(state, "LIB_PATH", String::create(state, path.c_str()));
+      path = prefix + RBX_ENC_PATH;
+      G(rubinius)->set_const(state, "ENC_PATH", String::create(state, path.c_str()));
       path = prefix + RBX_SITE_PATH;
       G(rubinius)->set_const(state, "SITE_PATH", String::create(state, path.c_str()));
       path = prefix + RBX_VENDOR_PATH;
@@ -487,12 +491,8 @@ namespace rubinius {
       path = prefix + RBX_GEMS_PATH;
       G(rubinius)->set_const(state, "GEMS_PATH", String::create(state, path.c_str()));
 
-      path = prefix + RBX_HDR18_PATH;
-      G(rubinius)->set_const(state, "HDR18_PATH", String::create(state, path.c_str()));
-      path = prefix + RBX_HDR19_PATH;
-      G(rubinius)->set_const(state, "HDR19_PATH", String::create(state, path.c_str()));
-      path = prefix + RBX_HDR20_PATH;
-      G(rubinius)->set_const(state, "HDR20_PATH", String::create(state, path.c_str()));
+      path = prefix + RBX_HDR_PATH;
+      G(rubinius)->set_const(state, "HDR_PATH", String::create(state, path.c_str()));
     }
 
     G(rubinius)->set_const(state, "VERSION", String::create(state, RBX_VERSION));
@@ -507,9 +507,9 @@ namespace rubinius {
     G(rubinius)->set_const(state, "VENDOR", String::create(state, RBX_VENDOR));
     G(rubinius)->set_const(state, "OS", String::create(state, RBX_OS));
 
-    if(LANGUAGE_20_ENABLED(state)) {
+    if(LANGUAGE_20_ENABLED) {
       G(rubinius)->set_const(state, "RUBY_LIB_VERSION", Fixnum::from(20));
-    } else if(LANGUAGE_19_ENABLED(state)) {
+    } else if(LANGUAGE_19_ENABLED) {
       G(rubinius)->set_const(state, "RUBY_LIB_VERSION", Fixnum::from(19));
     } else {
       G(rubinius)->set_const(state, "RUBY_LIB_VERSION", Fixnum::from(18));
@@ -609,7 +609,7 @@ namespace rubinius {
     rte = dexc(RuntimeError, std);
     sce = dexc(SystemCallError, std);
     // SystemStackError has a different superclass in 1.9
-    if(LANGUAGE_18_ENABLED(state)) {
+    if(LANGUAGE_18_ENABLED) {
       stk = dexc(SystemStackError, std);
     } else {
       stk = dexc(SystemStackError, exc);

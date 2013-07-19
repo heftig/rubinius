@@ -5,6 +5,8 @@ if ENV["RUBYLIB"]
   exit 1
 end
 
+require './rakelib/configure'
+require './rakelib/release'
 require 'rbconfig'
 require 'tempfile'
 require 'fileutils'
@@ -51,8 +53,7 @@ class Configure
     @perl = nil
 
     # Versions
-    @default_version = "18"
-    @version_list = ["18", "19"]
+    @language_version = "19"
     @supported_versions = ["18", "19", "20"]
     @build_ruby = nil
 
@@ -97,18 +98,17 @@ class Configure
     @bindir       = nil
     @appdir       = nil
     @libdir       = nil
+    @encdir       = nil
     @runtimedir   = nil
     @kerneldir    = nil
     @sitedir      = nil
     @vendordir    = nil
     @mandir       = nil
     @gemsdir      = nil
-    @libdir       = nil
+    @includedir   = nil
 
-    # TODO: fix this
-    @include18dir = nil # root + "/vm/capi/18/include"
-    @include19dir = nil # root + "/vm/capi/19/include"
-    @include20dir = nil # root + "/vm/capi/19/include"
+    @vm_release_h = root + "/vm/gen/release.h"
+    @vm_version_h = root + "/vm/gen/version.h"
 
     @preserve_prefix = false
 
@@ -116,16 +116,18 @@ class Configure
     @bin_links = ["rbx", "ruby", "rake", "gem", "irb", "rdoc", "ri"]
     @use_bin_links = true
 
+    # Vendored library settings
+    @vendored_libdir = root + "/vendor"
+
     # Library configuration
     @rb_readline = false
-    @vendor_zlib = false
 
     # Essential settings (modify these for creating releases)
     @libversion = "2.0"
     @patch_version = "0"
-    @release = "rc1"
-    @release_date = "yyyy-mm-dd"
-    @config_version = 174
+    @release = validate_release_label
+    @release_date = validate_release_date
+    @config_version = 178
   end
 
   # Set up system commands to run in cmd.exe on Windows. Either Windows
@@ -189,6 +191,12 @@ class Configure
       @kerneldir  = dir + "/kernel"
       @sitedir    = dir + "/site"
       @vendordir  = dir + "/vendor"
+
+      if @prefixdir == @sourcedir
+        @encdir = "/lib/#{@language_version}"
+      else
+        @encdir = "/lib"
+      end
     end
 
     @bindir       = @prefixdir + "/bin" unless @bindir
@@ -199,12 +207,27 @@ class Configure
     @vendordir    = @prefixdir + "/vendor" unless @vendordir
     @mandir       = @prefixdir + "/man" unless @mandir
     @gemsdir      = @prefixdir + "/gems" unless @gemsdir
-    @include18dir = @prefixdir + "/vm/capi/18/include" unless @include18dir
-    @include19dir = @prefixdir + "/vm/capi/19/include" unless @include19dir
-    @include20dir = @prefixdir + "/vm/capi/19/include" unless @include20dir
+
+    unless @includedir
+      if @prefixdir == @sourcedir
+        @includedir   = @prefixdir + "/vm/capi/#{@language_version}/include"
+      else
+        @includedir   = @prefixdir + "/vm/capi/include"
+      end
+    end
+
+    unless @encdir
+      if @prefixdir == @sourcedir
+        @encdir = "/lib/#{@language_version}"
+      else
+        @encdir = "/lib"
+      end
+    end
+
+    @encdir += "/encoding/converter"
 
     dirs = [@bindir, @libdir, @runtimedir, @kerneldir, @sitedir, @vendordir,
-            @mandir, @gemsdir, @include18dir, @include19dir, @include20dir]
+            @mandir, @gemsdir, @includedir]
 
     parts = dirs.map { |d| d.split "/" }
 
@@ -257,8 +280,8 @@ class Configure
 
     o.doc "\n Release Settings"
 
-    o.on "--release", "NAME", "Set version to X.Y.Z.NAME" do |name|
-      @release = name
+    o.on "--release", "LABEL", "Set release from { nightly, weekly, monthly, rcN, final }" do |label|
+      @release = validate_release_label label
     end
 
     o.on "--release-date", "DATE", "Set release date to DATE in yyyy-mm-dd format" do |date|
@@ -267,21 +290,8 @@ class Configure
 
     o.doc "\n Language version settings"
 
-    o.on "--default-version", "VERSION", "Enable Ruby VERSION as the default" do |v|
-      version = normalize_versions v
-      if version.size > 1
-        failure "Only one version can be default, given: #{version.inspect}."
-      end
-      @default_version = version.first
-
-      unless @version_list.include? @default_version
-        failure "Requested default version #{@default_version} is not enabled."
-      end
-    end
-
-    o.on "--enable-version", "VERSION", "Enable Ruby VERSION support (eg 18,19)" do |v|
-      @version_list = normalize_versions v
-      @default_version = @version_list.first if @version_list.size == 1
+    o.on "--enable-version", "VERSION", "Enable Ruby VERSION (supported 1.8, 1.9, 2.0)" do |v|
+      @language_version = normalize_version v
     end
 
     o.doc "\n Compiler settings"
@@ -396,10 +406,7 @@ class Configure
     end
 
     o.on "-I", "--includedir", "PATH", "Install Rubinius C-API include files in PATH" do |dir|
-      dir = expand dir
-      @include18dir = dir + "/18"
-      @include19dir = dir + "/19"
-      @include20dir = dir + "/20"
+      @includedir = expand dir
     end
 
     o.on "-A", "--appdir", "PATH", "Install Ruby runtime and libraries in PATH" do |dir|
@@ -436,6 +443,7 @@ class Configure
     feature "C-readline", true
     feature "ruby-readline", false
     feature "vendor-zlib", false
+    feature "vendor-yaml", false
     feature "alloc-tracking", false
     feature "fibers", true
     feature "dtrace", false
@@ -474,23 +482,19 @@ class Configure
   end
 
   def version
-    "#{@libversion}.#{@patch_version}.#{@release}"
+    version = "#{@libversion}.#{@patch_version}"
+    version += ".#{@release}" if @release
+    version
   end
 
-  def validate_release_date(str)
-    Date.parse(str).strftime
-  end
-
-  def normalize_versions(str)
-    versions = str.gsub(/[^\d,]/, "").split(',')
-    versions.each do |ver|
-      unless @supported_versions.include? ver
-        failure <<-EOM
-Unsupported language version requested: #{ver}. Options are #{@supported_versions.join(", ")}
-        EOM
-      end
+  def normalize_version(str)
+    version = str.gsub(/[^\d]/, "")
+    unless @supported_versions.include? version
+      failure <<-EOM
+Unsupported language version requested: #{version}. Options are #{@supported_versions.join(", ")}
+      EOM
     end
-    versions
+    version
   end
 
   def md5_checksum(md5_path, full_path)
@@ -688,7 +692,7 @@ Unsupported language version requested: #{ver}. Options are #{@supported_version
   def setup_path
     @log.print "Validating '#{@llvm_path}': "
     if File.directory? @llvm_path
-      ["Release", "Debug"].each do |which|
+      ["Release", "Debug", ""].each do |which|
         sub = File.join(@llvm_path, which, "bin")
         if File.directory? sub
           @log.write "Ok! Using #{which}"
@@ -1161,11 +1165,13 @@ int main() { return tgetnum(""); }
     end
   end
 
-  def detect_include_dirs
-    @include_dirs = @include_dirs.select {|p| File.directory? p }
-  end
+  def detect_build_dirs
+    ["/usr/local", "/opt/local", "/usr/pkg"].each do |dir|
+      @include_dirs << "#{dir}/include"
+      @lib_dirs     << "#{dir}/lib" << "#{dir}/lib64"
+    end
 
-  def detect_lib_dirs
+    @include_dirs = @include_dirs.select {|p| File.directory? p }
     @lib_dirs = @lib_dirs.select {|p| File.directory? p }
   end
 
@@ -1266,6 +1272,23 @@ int main() { return tgetnum(""); }
     status
   end
 
+  def enable_features
+    if @features["vendor-zlib"].value
+      # Our vendored zlib uses long as the crc_table type
+      # If we update vendored zlib in the future, we have to
+      # review this and make sure we update it properly to
+      # match the newer version which like will have uint32_t
+      # as the type.
+      @include_dirs << "#{@vendored_libdir}/zlib"
+      @lib_dirs     << "#{@vendored_libdir}/zlib"
+    end
+
+    if @features["vendor-yaml"].value
+      @include_dirs << "#{@vendored_libdir}/libyaml/include"
+      @lib_dirs     << "#{@vendored_libdir}/libyaml/src/.libs"
+    end
+  end
+
   def detect_features
     # Default on *BSD is no execinfo
     if RUBY_PLATFORM =~ /bsd/i and @features["execinfo"].configured.nil?
@@ -1305,22 +1328,11 @@ int main() { return tgetnum(""); }
       @features["vendor-zlib"].configured = true
     end
 
-    if @features["vendor-zlib"].value
-      @vendor_zlib = true
-      # Our vendored zlib uses long as the crc_table type
-      # If we update vendored zlib in the future, we have to
-      # review this and make sure we update it properly to
-      # match the newer version which like will have uint32_t
-      # as the type.
-      @include_dirs << "#{@vendordir}/zlib"
-      @lib_dirs     << "#{@vendordir}/zlib"
-    end
-
     @defines << "HAVE_SPT_REUSEARGV" if @linux || @darwin || @bsd
   end
 
   def detect_libraries
-    if @version_list.include? "19" or @version_list.include? "20"
+    if @language_version == "19" or @language_version == "20"
       unless has_library("libyaml", "yaml_parser_initialize", ["yaml"], ["yaml.h"])
         failure "libyaml is required for 1.9 and above"
       end
@@ -1370,8 +1382,10 @@ int main() { return tgetnum(""); }
   end
 
   def detect_headers
-    unless has_header("zlib.h")
-      failure "zlib.h is required"
+    unless @features["vendor-zlib"].value
+      unless has_header("zlib.h")
+        failure "zlib.h is required"
+      end
     end
 
     unless has_header("openssl/ssl.h")
@@ -1437,13 +1451,8 @@ int main() { return tgetnum(""); }
     set_host
     set_system_commands
 
-    ["/usr/local", "/opt/local", "/usr/pkg"].each do |dir|
-      @include_dirs << "#{dir}/include"
-      @lib_dirs     << "#{dir}/lib" << "#{dir}/lib64"
-    end
-
-    detect_include_dirs
-    detect_lib_dirs
+    enable_features
+    detect_build_dirs
 
     check_tools
 
@@ -1581,7 +1590,7 @@ int main() { return tgetnum(""); }
     @log.write "#{@libc} found!"
   end
 
-  def write_config
+  def write_configure_files
     unless @use_llvm
       @llvm = :no
       @llvm_configure = ""
@@ -1589,89 +1598,104 @@ int main() { return tgetnum(""); }
 
     @bin_links.delete @program_name
 
-    # Write the config file used by the build system and rbconfig.rb.
-    File.open @config, "wb" do |f|
-      # TODO: Make this the actual data structure that is written out.
-      f.puts <<-EOC
-module Rubinius
-  # Make this reload friendly without silly constant defined warnings.
-  BUILD_CONFIG = {
-    :command_line   => #{@command_line.join(" ").inspect},
-    :which_ruby     => :#{which_ruby},
-    :build_ruby     => "#{build_ruby}",
-    :build_rake     => "#{@rake}",
-    :build_perl     => "#{@perl}",
-    :llvm           => :#{@llvm},
-    :llvm_configure => "#{@llvm_configure}",
-    :llvm_version   => "#{@llvm_version}",
-    :llvm_shared    => #{@llvm_shared},
-    :cc             => "#{@cc}",
-    :cxx            => "#{@cxx}",
-    :ldshared       => "#{@ldshared}",
-    :ldsharedxx     => "#{@ldsharedxx}",
-    :gcc_major      => "#{@gcc_major}",
-    :user_cflags    => "#{@user_cflags}",
-    :user_cxxflags  => "#{@user_cxxflags}",
-    :user_cppflags  => "#{@user_cppflags}",
-    :user_ldflags   => "#{@user_ldflags}",
-    :system_cflags   => "#{@system_cflags}",
-    :system_cxxflags => "#{@system_cxxflags}",
-    :system_cppflags => "#{@system_cppflags}",
-    :system_ldflags  => "#{@system_ldflags}",
-    :make           => "#{@make}",
-    :include_dirs   => #{@include_dirs.inspect},
-    :lib_dirs       => #{@lib_dirs.inspect},
-    :defines        => #{@defines.inspect},
-    :curses         => #{@curses.inspect},
-    :host           => "#{@host}",
-    :cpu            => "#{@cpu}",
-    :vendor         => "#{@vendor}",
-    :os             => "#{@os}",
-    :little_endian  => #{@little_endian},
-    :sizeof_long    => #{sizeof("long")},
-    :x86_32         => #{@x86_32},
-    :x86_64         => #{@x86_64},
-    :dtrace         => #{@dtrace},
-    :fibers         => #{@fibers},
-    :sourcedir      => "#{@sourcedir}",
-    :stagingdir     => #{@stagingdir.inspect},
-    :prefixdir      => "#{@prefixdir}",
-    :bindir         => "#{@bindir}",
-    :libdir         => "#{@libdir}",
-    :runtimedir     => "#{@runtimedir}",
-    :kerneldir      => "#{@kerneldir}",
-    :sitedir        => "#{@sitedir}",
-    :vendordir      => "#{@vendordir}",
-    :include18dir   => "#{@include18dir}",
-    :include19dir   => "#{@include19dir}",
-    :include20dir   => "#{@include20dir}",
-    :mandir         => "#{@mandir}",
-    :gemsdir        => "#{@gemsdir}",
-    :program_name   => "#{@program_name}",
-    :bin_links      => #{@bin_links.inspect},
-    :use_bin_links  => #{@use_bin_links},
-    :version        => "#{version}",
-    :libversion     => "#{@libversion}",
-    :release_date   => "#{@release_date}",
-    :config_version => #{@config_version},
-    :windows        => #{@windows},
-    :darwin         => #{@darwin},
-    :bsd            => #{@bsd},
-    :linux          => #{@linux},
-    :version_list   => #{@version_list.inspect},
-    :default_version => "#{@default_version}",
-    :vendor_zlib    => #{@vendor_zlib},
-    :readline       => :#{@rb_readline ? :rb_readline : :c_readline},
-  }
-end
-      EOC
-    end
+    config_settings = {
+      :command_line       => @command_line,
+      :config_file        => @config,
+      :which_ruby         => which_ruby,
+      :build_ruby         => build_ruby,
+      :build_rake         => @rake,
+      :build_perl         => @perl,
+      :llvm               => @llvm,
+      :llvm_configure     => @llvm_configure,
+      :llvm_version       => @llvm_version,
+      :llvm_shared        => @llvm_shared,
+      :cc                 => @cc,
+      :cxx                => @cxx,
+      :ldshared           => @ldshared,
+      :ldsharedxx         => @ldsharedxx,
+      :gcc_major          => @gcc_major,
+      :user_cflags        => "#{@user_cflags}",
+      :user_cxxflags      => "#{@user_cxxflags}",
+      :user_cppflags      => "#{@user_cppflags}",
+      :user_ldflags       => "#{@user_ldflags}",
+      :system_cflags      => "#{@system_cflags}",
+      :system_cxxflags    => "#{@system_cxxflags}",
+      :system_cppflags    => "#{@system_cppflags}",
+      :system_ldflags     => "#{@system_ldflags}",
+      :make               => @make,
+      :include_dirs       => @include_dirs,
+      :lib_dirs           => @lib_dirs,
+      :defines            => @defines,
+      :curses             => @curses,
+      :host               => @host,
+      :cpu                => @cpu,
+      :vendor             => @vendor,
+      :os                 => @os,
+      :little_endian      => @little_endian,
+      :sizeof_long        => sizeof("long"),
+      :x86_32             => @x86_32,
+      :x86_64             => @x86_64,
+      :dtrace             => @dtrace,
+      :fibers             => @fibers,
+      :sourcedir          => @sourcedir,
+      :stagingdir         => @stagingdir,
+      :prefixdir          => @prefixdir,
+      :bindir             => @bindir,
+      :libdir             => @libdir,
+      :encdir             => @encdir,
+      :runtimedir         => @runtimedir,
+      :kerneldir          => @kerneldir,
+      :sitedir            => @sitedir,
+      :vendordir          => @vendordir,
+      :includedir         => @includedir,
+      :mandir             => @mandir,
+      :gemsdir            => @gemsdir,
+      :program_name       => @program_name,
+      :bin_links          => @bin_links,
+      :use_bin_links      => @use_bin_links,
+      :version            => version,
+      :patch_version      => @patch_version,
+      :libversion         => @libversion,
+      :release            => @release,
+      :release_date       => @release_date,
+      :revision           => read_revision,
+      :config_version     => @config_version,
+      :windows            => @windows,
+      :darwin             => @darwin,
+      :bsd                => @bsd,
+      :linux              => @linux,
+      :vendor_zlib        => @features["vendor-zlib"].value,
+      :vendor_yaml        => @features["vendor-yaml"].value,
+      :readline           => @rb_readline ? :rb_readline : :c_readline,
+      :vm_release_h       => @vm_release_h,
+      :vm_version_h       => @vm_version_h,
+      :language_version   => @language_version,
+      :supported_versions => @supported_versions
+    }
+
+    write_config_rb @config, config_settings
 
     Dir.mkdir "lib/rubinius" unless File.directory? "lib/rubinius"
     FileUtils.cp @config, "lib/rubinius/build_config.rb"
 
     # Write the config file used to build the C++ VM.
     Dir.mkdir "vm/gen" unless File.directory? "vm/gen"
+
+    vm_paths_h = "vm/gen/paths.h"
+    File.open vm_paths_h, "wb" do |f|
+      f.puts <<-EOF
+#define RBX_PREFIX_PATH      "#{@prefixdir}"
+#define RBX_BIN_PATH         "#{@bindir}"
+#define RBX_GEMS_PATH        "#{@gemsdir}"
+#define RBX_RUNTIME_PATH     "#{@runtimedir}"
+#define RBX_KERNEL_PATH      "#{@kerneldir}"
+#define RBX_LIB_PATH         "#{@libdir}"
+#define RBX_ENC_PATH         "#{@encdir}"
+#define RBX_HDR_PATH         "#{@includedir}"
+#define RBX_SITE_PATH        "#{@sitedir}"
+#define RBX_VENDOR_PATH      "#{@vendordir}"
+      EOF
+    end
 
     vm_config_h = "vm/gen/config.h"
     File.open vm_config_h, "wb" do |f|
@@ -1680,34 +1704,13 @@ end
 #define RBX_CPU              "#{@cpu}"
 #define RBX_VENDOR           "#{@vendor}"
 #define RBX_OS               "#{@os}"
-#define RBX_PREFIX_PATH      "#{@prefixdir}"
-#define RBX_BIN_PATH         "#{@bindir}"
-#define RBX_GEMS_PATH        "#{@gemsdir}"
-#define RBX_RUNTIME_PATH     "#{@runtimedir}"
-#define RBX_KERNEL_PATH      "#{@kerneldir}"
-#define RBX_LIB_PATH         "#{@libdir}"
-#define RBX_HDR18_PATH       "#{@include18dir}"
-#define RBX_HDR19_PATH       "#{@include19dir}"
-#define RBX_HDR20_PATH       "#{@include20dir}"
-#define RBX_SITE_PATH        "#{@sitedir}"
-#define RBX_VENDOR_PATH      "#{@vendordir}"
-#define RBX_VERSION          "#{version}"
 #define RBX_LIB_VERSION      "#{@libversion}"
 #define RBX_LDSHARED         "#{@ldshared}"
 #define RBX_LDSHAREDXX       "#{@ldsharedxx}"
-#define RBX_RELEASE_DATE     "#{@release_date}"
 #define RBX_SIZEOF_LONG      #{sizeof("long")}
 #define RBX_LLVM_API_VER     #{@llvm_api_version}
 #define RBX_LIBC             "#{@libc}"
       EOC
-
-      @supported_versions.each do |ver|
-        f.puts "#define RBX_DEFAULT_#{ver}       #{ver == @default_version}"
-      end
-
-      @version_list.each do |ver|
-        f.puts "#define RBX_ENABLED_#{ver}       1"
-      end
 
       if @little_endian
         f.puts "#define RBX_LITTLE_ENDIAN    1"
@@ -1734,8 +1737,10 @@ end
       write_have_defines f
     end
 
-    FileUtils.cp vm_config_h, "vm/capi/18/include/rbx_config.h"
-    FileUtils.cp vm_config_h, "vm/capi/19/include/rbx_config.h"
+    vm_capi_header_gen = "vm/capi/#{@language_version}/include/gen"
+    FileUtils.mkdir_p vm_capi_header_gen
+
+    FileUtils.cp vm_config_h, "#{vm_capi_header_gen}/rbx_config.h"
 
     # Write the config file for vendor/oniguruma.
     File.open "vendor/oniguruma/config.h", "wb" do |f|
@@ -1775,16 +1780,19 @@ end
 
     FileUtils.cp config_h, "vm/capi/18/include/config.h"
     FileUtils.cp config_h, "vm/capi/19/include/ruby/config.h"
+    FileUtils.cp config_h, "vm/capi/20/include/ruby/config.h"
 
     # Copy definitions for the MRI Object-Oriented Pointer (OOP) definitions.
     mri_oop_h = "vm/capi/mri_oop.h"
     FileUtils.cp mri_oop_h, "vm/capi/18/include/mri_oop.h"
     FileUtils.cp mri_oop_h, "vm/capi/19/include/ruby/mri_oop.h"
+    FileUtils.cp mri_oop_h, "vm/capi/20/include/ruby/mri_oop.h"
 
     # Copy definitions for the C-Api constants
     capi_constants_h = "vm/capi/capi_constants.h"
     FileUtils.cp capi_constants_h, "vm/capi/18/include/capi_constants.h"
     FileUtils.cp capi_constants_h, "vm/capi/19/include/ruby/capi_constants.h"
+    FileUtils.cp capi_constants_h, "vm/capi/20/include/ruby/capi_constants.h"
 
     # Write a require file depending on which Readline library we use.
     File.open "lib/readline.rb", "wb" do |f|
@@ -1826,8 +1834,12 @@ end
     end
 
     if File.exists? @config
-      load @config
-      verify_config = true
+      begin
+        load @config
+        verify_config = true
+      rescue Object
+        # ignore errors
+      end
     end
 
     options
@@ -1847,7 +1859,10 @@ end
     end
 
     process
-    write_config
+    write_configure_files
+    record_revision
+    write_release @vm_release_h, version, @release_date, read_revision
+    write_version @vm_version_h, @language_version, @supported_versions
 
     check_force_clean if verify_config
 
@@ -1890,6 +1905,7 @@ site:    #{@sitedir}
 vendor:  #{@vendordir}
 man:     #{@mandir}
 gems:    #{@gemsdir}
+include: #{@includedir}
 
 Run 'rake' to build, test and install Rubinius.
       EOM

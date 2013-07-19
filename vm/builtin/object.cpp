@@ -26,6 +26,7 @@
 #include "objectmemory.hpp"
 #include "object_utils.hpp"
 #include "on_stack.hpp"
+#include "version.h"
 
 #include <sstream>
 
@@ -151,7 +152,7 @@ namespace rubinius {
   Object* Object::freeze(STATE) {
     if(reference_p()) {
       set_frozen();
-    } else if(!LANGUAGE_18_ENABLED(state)) {
+    } else if(!LANGUAGE_18_ENABLED) {
       LookupTable* tbl = try_as<LookupTable>(G(external_ivars)->fetch(state, this));
 
       if(!tbl) {
@@ -167,7 +168,7 @@ namespace rubinius {
   Object* Object::frozen_p(STATE) {
     if(reference_p()) {
       return RBOOL(is_frozen_p());
-    } else if(!LANGUAGE_18_ENABLED(state)) {
+    } else if(!LANGUAGE_18_ENABLED) {
       LookupTable* tbl = try_as<LookupTable>(G(external_ivars)->fetch(state, this));
       return RBOOL(tbl && tbl->is_frozen_p());
     }
@@ -177,7 +178,7 @@ namespace rubinius {
   void Object::check_frozen(STATE) {
     if(CBOOL(frozen_p(state))) {
       const char* reason = "can't modify frozen object";
-      if(LANGUAGE_18_ENABLED(state)) {
+      if(LANGUAGE_18_ENABLED) {
         Exception::type_error(state, reason);
       } else {
         Exception::runtime_error(state, reason);
@@ -423,7 +424,7 @@ namespace rubinius {
       other->taint(state);
     }
 
-    if(!LANGUAGE_18_ENABLED(state)) {
+    if(!LANGUAGE_18_ENABLED) {
       if(is_untrusted_p()) {
         other->untrust(state);
       }
@@ -837,9 +838,10 @@ namespace rubinius {
 
   Object* Object::respond_to(STATE, Symbol* name, Object* priv, CallFrame* calling_environment) {
     Object* responds = respond_to(state, name, priv);
+    Object* self = this;
 
-    if(!CBOOL(responds) && !LANGUAGE_18_ENABLED(state)) {
-      LookupData lookup(this, this->lookup_begin(state), G(sym_private));
+    if(!CBOOL(responds) && !LANGUAGE_18_ENABLED) {
+      LookupData lookup(self, self->lookup_begin(state), G(sym_private));
       Symbol* missing = state->symbol("respond_to_missing?");
       Dispatch dis(missing);
 
@@ -847,7 +849,8 @@ namespace rubinius {
       buf[0] = name;
       buf[1] = priv;
 
-      Arguments args(missing, this, 2, buf);
+      Arguments args(missing, self, 2, buf);
+      OnStack<3> os(state, self, name, priv);
       responds = dis.send(state, calling_environment, lookup, args);
       if(!responds) return NULL;
       responds = RBOOL(CBOOL(responds));
@@ -862,7 +865,7 @@ namespace rubinius {
         existing = rct->fallback_call_site();
       }
       RespondToCache* cache = RespondToCache::create(state, existing,
-                                this, name, priv, responds, 1);
+                                self, name, priv, responds, 1);
       state->vm()->global_cache()->add_seen(state, name);
       atomic::memory_barrier();
       existing->update_call_site(state, cache);

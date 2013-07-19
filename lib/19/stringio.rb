@@ -41,9 +41,15 @@ class StringIO
 
   attr_reader :__data__
 
-  def initialize(string="", mode=nil)
-    string = Rubinius::Type.coerce_to string, String, :to_str
-    @__data__ = Data.new string
+  def initialize(string=nil, mode=nil)
+    if string.nil?
+      @__data__ = Data.new ""
+      set_encoding(nil)
+      mode = IO::RDWR
+    else
+      string = Rubinius::Type.coerce_to string, String, :to_str
+      @__data__ = Data.new string
+    end
 
     if mode
       if mode.is_a?(Integer)
@@ -609,6 +615,21 @@ class StringIO
 
     d.string.force_encoding enc
     nil
+  end
+
+  def encode_with(coder)
+  end
+
+  def init_with(coder)
+    @__data__ = Data.new("")
+  end
+
+  def to_yaml_properties
+    []
+  end
+
+  def yaml_initialize(type, val)
+    @__data__ = Data.new("")
   end
 
   protected

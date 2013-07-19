@@ -1,6 +1,7 @@
 #include "symboltable.hpp"
 #include "exception.hpp"
 #include "configuration.hpp"
+#include "version.h"
 
 #include "builtin/array.hpp"
 #include "builtin/encoding.hpp"
@@ -58,7 +59,7 @@ namespace rubinius {
   }
 
   Symbol* SymbolTable::lookup(STATE, const char* str, size_t length) {
-    if(length == 0 && LANGUAGE_18_ENABLED(state)) {
+    if(length == 0 && LANGUAGE_18_ENABLED) {
       Exception::argument_error(state, "Cannot create a symbol from an empty string");
       return NULL;
     }
@@ -150,7 +151,7 @@ namespace rubinius {
     const char* bytes = (const char*) str->byte_address();
     size_t size = str->byte_size();
 
-    if(LANGUAGE_18_ENABLED(state)) {
+    if(LANGUAGE_18_ENABLED) {
       for(size_t i = 0; i < size; i++) {
         if(bytes[i] == 0) {
           Exception::argument_error(state,

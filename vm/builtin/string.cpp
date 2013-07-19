@@ -25,6 +25,7 @@
 #include "util/siphash.h"
 #include "util/spinlock.hpp"
 #include "util/random.h"
+#include "version.h"
 
 #include <unistd.h>
 #include <string.h>
@@ -634,6 +635,9 @@ namespace rubinius {
         }
 
         num_chars(state, Fixnum::from(chars));
+        if(num_chars_ == num_bytes_) {
+          ascii_only_ = cTrue;
+        }
       }
     }
 
@@ -767,11 +771,11 @@ namespace rubinius {
     return RBOOL(sum == 0);
   }
 
-  String* String::string_dup(STATE) {
+  String* String::string_dup_slow(STATE) {
     Module* mod = klass_;
     Class*  cls = try_as_instance<Class>(mod);
 
-    if(unlikely(!cls)) {
+    if(!cls) {
       while(!cls) {
         mod = mod->superclass();
 
@@ -980,7 +984,7 @@ namespace rubinius {
         native_int start = i - 1;
         native_int max = ++i < bytes ? str[i] : -1;
         native_int next = max >= 0 ? i + 1 : i;
-        if(max >= 0 && chr > max && !LANGUAGE_18_ENABLED(state)) {
+        if(max >= 0 && chr > max && !LANGUAGE_18_ENABLED) {
           std::ostringstream message;
           if(isprint(chr) && isprint(max)) {
             message << "invalid range \"";
@@ -1348,17 +1352,18 @@ namespace rubinius {
     if(i < 0) i += byte_size();
     if(i >= byte_size() || i < 0) return cNil;
 
-    if(LANGUAGE_18_ENABLED(state)) {
+    if(LANGUAGE_18_ENABLED) {
       return Fixnum::from(byte_address()[i]);
     }
 
-    if(byte_compatible_p(encoding_)) {
+    native_int len = char_size(state);
+    if(byte_compatible_p(encoding_) || CBOOL(ascii_only_)) {
       return byte_substring(state, i, 1);
     } else {
       // Assumptions above about size are possibly invalid, recalculate.
       i = index->to_native();
-      if(i < 0) i += char_size(state);
-      if(i >= char_size(state) || i < 0) return cNil;
+      if(i < 0) i += len;
+      if(i >= len || i < 0) return cNil;
 
       return char_substring(state, i, 1);
     }
@@ -1369,7 +1374,7 @@ namespace rubinius {
    */
   native_int String::find_character_byte_index(STATE, native_int index,
                                                native_int start) {
-    if(byte_compatible_p(encoding_)) {
+    if(byte_compatible_p(encoding_) || CBOOL(ascii_only_)) {
       return start + index;
     } else if(fixed_width_p(encoding_)) {
       return start + index * ONIGENC_MBC_MINLEN(encoding(state)->get_encoding());
@@ -1399,7 +1404,7 @@ namespace rubinius {
    */
   native_int String::find_byte_character_index(STATE, native_int index,
                                                native_int start) {
-    if(byte_compatible_p(encoding_)) {
+    if(byte_compatible_p(encoding_) || CBOOL(ascii_only_)) {
       return index;
     } else if(fixed_width_p(encoding_)) {
       return index / ONIGENC_MBC_MINLEN(encoding(state)->get_encoding());
@@ -1443,6 +1448,7 @@ namespace rubinius {
 
     if(tainted_p(state)->true_p()) sub->taint(state);
     if(untrusted_p(state)->true_p()) sub->untrust(state);
+    sub->ascii_only(state, ascii_only_);
     sub->encoding(state, encoding());
 
     return sub;
@@ -1492,15 +1498,9 @@ namespace rubinius {
   String* String::substring(STATE, Fixnum* index, Fixnum* length) {
     native_int i = index->to_native();
     native_int n = length->to_native();
-    native_int size;
+    native_int size = char_size(state);
 
     if(n < 0) return nil<String>();
-
-    if(byte_compatible_p(encoding_)) {
-      size = byte_size();
-    } else {
-      size = char_size(state);
-    }
 
     if(i < 0) {
       i += size;
@@ -1513,7 +1513,7 @@ namespace rubinius {
       n = size - i;
     }
 
-    if(n == 0 || byte_compatible_p(encoding_)) {
+    if(n == 0 || byte_compatible_p(encoding_) || CBOOL(ascii_only_)) {
       return byte_substring(state, i, n);
     } else {
       return char_substring(state, i, n);
@@ -1577,7 +1577,7 @@ namespace rubinius {
     uint8_t* s;
     uint8_t* ss;
 
-    if(byte_compatible_p(encoding())) {
+    if(byte_compatible_p(encoding()) || CBOOL(ascii_only_)) {
       for(s = p += offset, ss = pp; p < e; s = ++p) {
         if(*p != *pp) continue;
 
@@ -1788,7 +1788,7 @@ namespace rubinius {
   }
 
   Encoding* String::get_encoding_kcode_fallback(STATE) {
-    if(!LANGUAGE_18_ENABLED(state)) {
+    if(!LANGUAGE_18_ENABLED) {
       if(!encoding_->nil_p()) {
         return encoding_;
       }
@@ -1820,7 +1820,7 @@ namespace rubinius {
 
     if(ONIGENC_MBC_MAXLEN(enc) == 1) {
       output = String::create(state, reinterpret_cast<const char*>(cur), 1);
-    } else if(LANGUAGE_18_ENABLED(state)) {
+    } else if(LANGUAGE_18_ENABLED) {
       kcode::table* kcode_tbl = state->shared().kcode_table();
       int len = kcode::mbclen(kcode_tbl, *cur);
       output = String::create(state, reinterpret_cast<const char*>(cur), len);
@@ -1919,7 +1919,7 @@ namespace rubinius {
 
   Object* String::valid_encoding_p(STATE) {
     if(valid_encoding_->nil_p()) {
-      if(encoding(state) == Encoding::from_index(state, Encoding::eBinary)) {
+      if(encoding(state) == Encoding::ascii8bit_encoding(state)) {
         valid_encoding(state, cTrue);
         return valid_encoding_;
       }

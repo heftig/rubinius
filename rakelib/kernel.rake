@@ -31,7 +31,7 @@ end
 
 # TODO: Build this functionality into the compiler
 class KernelCompiler
-  def self.compile(version, file, output, line, transforms)
+  def self.compile(file, output, line, transforms)
     compiler = Rubinius::Compiler.new :file, :compiled_file
 
     parser = compiler.parser
@@ -40,7 +40,7 @@ class KernelCompiler
     writer = compiler.writer
 
     # Not ready to enable them yet
-    case version
+    case BUILD_CONFIG[:language_version]
     when "18"
       parser.processor Rubinius::Melbourne
       writer.version = 18
@@ -70,9 +70,8 @@ end
 # The rule for compiling all kernel Ruby files
 rule ".rbc" do |t|
   source = t.prerequisites.first
-  version = t.name.match(%r[^runtime/(\d+)])[1]
-  puts "RBC #{version.split(//).join('.')} #{source}"
-  KernelCompiler.compile version, source, t.name, 1, [:default, :kernel]
+  puts "RBC #{source}"
+  KernelCompiler.compile source, t.name, 1, [:default, :kernel]
 end
 
 # Collection of all files in the kernel runtime. Modified by
@@ -88,19 +87,19 @@ dir_names = %w[
 ]
 
 # Generate file tasks for all kernel and load_order files.
-def file_task(re, runtime, signature, version, rb, rbc)
-  rbc ||= rb.sub(re, "runtime/#{version}") + "c"
+def file_task(re, runtime, signature, rb, rbc)
+  rbc ||= rb.sub(re, "runtime") + "c"
 
   file rbc => [rb, signature]
   runtime << rbc
 end
 
-def kernel_file_task(runtime, signature, version, rb, rbc=nil)
-  file_task(/^kernel/, runtime, signature, version, rb, rbc)
+def kernel_file_task(runtime, signature, rb, rbc=nil)
+  file_task(/^kernel/, runtime, signature, rb, rbc)
 end
 
-def compiler_file_task(runtime, signature, version, rb, rbc=nil)
-  file_task(/^lib/, runtime, signature, version, rb, rbc)
+def compiler_file_task(runtime, signature, rb, rbc=nil)
+  file_task(/^lib/, runtime, signature, rb, rbc)
 end
 
 # Compile all compiler files during build stage
@@ -174,67 +173,65 @@ file signature_header => signature_file do |t|
 end
 
 # Index files for loading a particular version of the kernel.
-BUILD_CONFIG[:version_list].each do |ver|
-  directory(runtime_base_dir = "runtime/#{ver}")
-  runtime << runtime_base_dir
+directory(runtime_base_dir = "runtime")
+runtime << runtime_base_dir
 
-  runtime_index = "#{runtime_base_dir}/index"
-  runtime << runtime_index
+runtime_index = "#{runtime_base_dir}/index"
+runtime << runtime_index
 
-  file runtime_index => runtime_base_dir do |t|
-    File.open t.name, "wb" do |file|
-      file.puts dir_names
-    end
+file runtime_index => runtime_base_dir do |t|
+  File.open t.name, "wb" do |file|
+    file.puts dir_names
+  end
+end
+
+signature = "runtime/signature"
+file signature => signature_file do |t|
+  File.open t.name, "wb" do |file|
+    puts "GEN #{t.name}"
+    file.puts Rubinius::Signature
+  end
+end
+runtime << signature
+
+# All the kernel files
+dir_names.each do |dir|
+  directory(runtime_dir = "runtime/#{dir}")
+  runtime << runtime_dir
+
+  load_order = "runtime/#{dir}/load_order.txt"
+  runtime << load_order
+
+  kernel_load_order = "kernel/#{dir}/load_order#{BUILD_CONFIG[:language_version]}.txt"
+
+  file load_order => [kernel_load_order, signature] do |t|
+    cp t.prerequisites.first, t.name, :verbose => $verbose
   end
 
-  signature = "runtime/#{ver}/signature"
-  file signature => signature_file do |t|
-    File.open t.name, "wb" do |file|
-      puts "GEN #{t.name}"
-      file.puts Rubinius::Signature
-    end
+  kernel_dir  = "kernel/#{dir}/"
+  runtime_dir = "runtime/#{dir}/"
+
+  IO.foreach kernel_load_order do |name|
+    rbc = runtime_dir + name.chomp!
+    rb  = kernel_dir + name.chop
+    kernel_file_task runtime, signature_file, rb, rbc
   end
-  runtime << signature
+end
 
-  # All the kernel files
-  dir_names.each do |dir|
-    directory(runtime_dir = "runtime/#{ver}/#{dir}")
-    runtime << runtime_dir
+[ signature_file,
+  "kernel/alpha.rb",
+  "kernel/loader.rb",
+  "kernel/delta/converter_paths.rb"
+].each do |name|
+  kernel_file_task runtime, signature_file, name
+end
 
-    load_order = "runtime/#{ver}/#{dir}/load_order.txt"
-    runtime << load_order
+compiler_files.map { |f| File.dirname f }.uniq.each do |dir|
+  directory dir
+end
 
-    kernel_load_order = "kernel/#{dir}/load_order#{ver}.txt"
-
-    file load_order => kernel_load_order do |t|
-      cp t.prerequisites.first, t.name, :verbose => $verbose
-    end
-
-    kernel_dir  = "kernel/#{dir}/"
-    runtime_dir = "runtime/#{ver}/#{dir}/"
-
-    IO.foreach kernel_load_order do |name|
-      rbc = runtime_dir + name.chomp!
-      rb  = kernel_dir + name.chop
-      kernel_file_task runtime, signature_file, ver, rb, rbc
-    end
-  end
-
-  [ signature_file,
-    "kernel/alpha.rb",
-    "kernel/loader.rb",
-    "kernel/delta/converter_paths.rb"
-  ].each do |name|
-    kernel_file_task runtime, signature_file, ver, name
-  end
-
-  compiler_files.map { |f| File.dirname f }.uniq.each do |dir|
-    directory dir
-  end
-
-  compiler_files.each do |name|
-    compiler_file_task runtime, signature_file, ver, name
-  end
+compiler_files.each do |name|
+  compiler_file_task runtime, signature_file, name
 end
 
 namespace :compiler do

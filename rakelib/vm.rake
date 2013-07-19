@@ -1,6 +1,7 @@
 require 'rakelib/rubinius'
 require 'rakelib/instruction_parser'
 require 'rakelib/generator_task'
+require 'rakelib/release'
 
 require 'tmpdir'
 require 'ostruct'
@@ -18,6 +19,10 @@ VM_EXE = RUBY_PLATFORM =~ /mingw|mswin/ ? 'vm/vm.exe' : 'vm/vm'
 
 encoding_database = "vm/gen/encoding_database.cpp"
 transcoders_database = "vm/gen/transcoder_database.cpp"
+
+vm_release_h = BUILD_CONFIG[:vm_release_h]
+vm_version_h = BUILD_CONFIG[:vm_version_h]
+capi_release_h = "vm/capi/#{BUILD_CONFIG[:language_version]}/include/gen/rbx_release.h"
 
 ENV.delete 'CDPATH' # confuses llvm_config
 
@@ -45,12 +50,14 @@ TYPE_GEN    = %w[ vm/gen/includes.hpp
                   vm/gen/jit_resolver.cpp
                   vm/gen/invoke_resolver.cpp ]
 
-GENERATED = %W[ vm/gen/revision.h
-                vm/gen/config_variables.h
+GENERATED = %W[ vm/gen/config_variables.h
                 vm/gen/signature.h
                 vm/dtrace/probes.h
                 #{encoding_database}
                 #{transcoders_database}
+                #{vm_release_h}
+                #{vm_version_h}
+                #{capi_release_h}
               ] + TYPE_GEN + INSN_GEN
 
 # Files are in order based on dependencies. For example,
@@ -122,8 +129,8 @@ field_extract_headers = %w[
 
 transcoders_src_dir = File.expand_path "../../vendor/oniguruma/enc/trans", __FILE__
 
-libdir = "#{BUILD_CONFIG[:stagingdir] || BUILD_CONFIG[:sourcedir]}/#{BUILD_CONFIG[:libdir]}"
-transcoders_lib_dir = File.expand_path "#{libdir}/19/encoding/converter", __FILE__
+libdir = "#{BUILD_CONFIG[:stagingdir] || BUILD_CONFIG[:sourcedir]}"
+transcoders_lib_dir = "#{libdir}/#{BUILD_CONFIG[:encdir]}"
 directory transcoders_lib_dir
 
 TRANSCODING_LIBS = []
@@ -239,18 +246,28 @@ file transcoders_database => [transcoders_lib_dir, transcoders_extract] do |t|
   ruby transcoders_extract, transcoders_src_dir, t.name
 end
 
-task 'vm/gen/revision.h' do |t|
-  git_dir = File.expand_path "../../.git", __FILE__
+task vm_version_h do |t|
+  write_version t.name, BUILD_CONFIG[:language_version], BUILD_CONFIG[:supported_versions]
+end
 
-  if !ENV['RELEASE'] and File.directory? git_dir
-    buildrev = `git rev-parse HEAD`.chomp
+task vm_release_h do |t|
+  if git_directory
+    if validate_revision
+      write_release t.name, config_rubinius_version, config_release_date, build_revision
+    else
+      write_release t.name, default_rubinius_version, default_release_date, build_revision
+    end
+  elsif File.file? release_revision
+    unless File.exists? t.name
+      write_release t.name, default_rubinius_version, default_release_date, build_revision
+    end
   else
-    buildrev = "release"
+    write_release t.name, config_rubinius_version, config_release_date, build_revision
   end
+end
 
-  File.open t.name, "wb" do |f|
-    f.puts %[#define RBX_BUILD_REV     "#{buildrev}"]
-  end
+task capi_release_h => vm_release_h do |t|
+  FileUtils.cp vm_release_h, t.name
 end
 
 file 'vm/gen/config_variables.h' => %w[lib/rubinius/configuration.rb config.rb] do |t|
@@ -388,7 +405,7 @@ namespace :vm do
       'bin/gem',
       'vm/.deps',
       'staging'
-    ].exclude("vm/gen/config.h")
+    ].exclude("vm/gen/config.h", "vm/gen/paths.h")
 
     files.each do |filename|
       rm_rf filename, :verbose => $verbose

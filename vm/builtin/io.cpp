@@ -16,6 +16,7 @@
 #include "ontology.hpp"
 #include "util/spinlock.hpp"
 #include "windows_compat.h"
+#include "version.h"
 
 #include <sstream>
 #include <unistd.h>
@@ -615,7 +616,7 @@ namespace rubinius {
         }
       }
 
-      if(LANGUAGE_18_ENABLED(state)) {
+      if(LANGUAGE_18_ENABLED) {
         ::close(fd);
       } else if(io->autoclose_ != cFalse) {
         ::close(fd);

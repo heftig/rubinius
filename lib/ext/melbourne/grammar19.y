@@ -2759,6 +2759,8 @@ f_arglist       : '(' f_args rparen
                 | f_args term
                   {
                     $$ = $1;
+                    lex_state = EXPR_BEG;
+                    command_start = TRUE;
                   }
                 ;
 
@@ -3363,6 +3365,7 @@ parser_str_new(rb_parser_state* parser_state, const char *p, long n,
 #define lex_goto_eol(parser_state)  (lex_p = lex_pend)
 #define lex_eol_p() (lex_p >= lex_pend)
 #define peek(c) (lex_p < lex_pend && (c) == *lex_p)
+#define peek_n(c,n) (lex_p+(n) < lex_pend && (c) == (unsigned char)lex_p[n])
 
 static inline int
 parser_nextc(rb_parser_state* parser_state)
@@ -3880,6 +3883,10 @@ parser_tokadd_string(rb_parser_state *parser_state,
           pushback(c);
           if(func & STR_FUNC_ESCAPE) tokadd('\\');
           c = read_escape(0, &enc);
+          if(!ISASCII(c)) {
+            if(tokadd_mbchar(c) == -1) return -1;
+            continue;
+          }
         } else if((func & STR_FUNC_QWORDS) && ISSPACE(c)) {
           /* ignore backslashed spaces in %w */
         } else if(c != term && !(paren && c == paren)) {
@@ -4512,6 +4519,8 @@ parser_prepare(rb_parser_state* parser_state)
                          || lex_state == EXPR_VALUE \
                          || lex_state == EXPR_CLASS)
 #define IS_SPCARG(c)    (IS_ARG() && space_seen && !ISSPACE(c))
+#define IS_LABEL_POSSIBLE() ((lex_state == EXPR_BEG && !cmd_state) || IS_ARG())
+#define IS_LABEL_SUFFIX(n) (peek_n(':',(n)) && !peek_n(':', (n)+1))
 
 #define ambiguous_operator(op, syn) ( \
     rb_warning0("`"op"' after local variable is interpreted as binary operator"), \
@@ -4606,8 +4615,8 @@ retry:
       default:
         --sourceline;
         lex_nextline = lex_lastline;
-      case -1:		/* EOF no decrement*/
-        lex_goto_eol();
+      case -1:         /* EOF no decrement*/
+        lex_goto_eol(parser_state);
         goto normal_newline;
       }
     }
@@ -4707,8 +4716,7 @@ retry:
     }
     if(c == '~') {
       return tMATCH;
-    }
-    else if(c == '>') {
+    } else if(c == '>') {
       return tASSOC;
     }
     pushback(c);
@@ -4745,7 +4753,7 @@ retry:
         return tOP_ASGN;
       }
       pushback(c);
-	    warn_balanced("<<", "here document");
+      warn_balanced("<<", "here document");
       return tLSHFT;
     }
     pushback(c);
@@ -4892,7 +4900,7 @@ retry:
     } else if(IS_BEG()) {
       c = tAMPER;
     } else {
-	    warn_balanced("&", "argument prefix");
+      warn_balanced("&", "argument prefix");
       c = '&';
     }
     switch(lex_state) {
@@ -5018,7 +5026,7 @@ retry:
         tokadd(c);
         c = nextc();
       }
-	    if(c == '0') {
+      if(c == '0') {
 #define no_digits() do {yy_error("numeric literal without digits"); return 0;} while(0)
         int start = toklen();
         c = nextc();
@@ -5200,7 +5208,7 @@ retry:
           nondigit = c;
           break;
 
-        case '_':	/* `_' in number just ignored */
+        case '_':      /* `_' in number just ignored */
           if(nondigit) goto decode_num;
           nondigit = c;
           break;
@@ -5231,7 +5239,7 @@ retry:
     }
     set_yylval_number(rb_cstr_to_inum(tok(), 10, FALSE));
     return tINTEGER;
-	}
+  }
 
   case ')':
   case ']':
@@ -5258,7 +5266,7 @@ retry:
     }
     if(IS_END() || ISSPACE(c)) {
       pushback(c);
-	    warn_balanced(":", "symbol literal");
+      warn_balanced(":", "symbol literal");
       lex_state = EXPR_BEG;
       return ':';
     }
@@ -5288,7 +5296,7 @@ retry:
     }
     pushback(c);
     if(IS_SPCARG(c)) {
-      arg_ambiguous();
+      (void)arg_ambiguous();
       lex_strterm = NEW_STRTERM(str_regexp, '/', 0);
       return tREGEXP_BEG;
     }
@@ -5499,9 +5507,9 @@ retry:
     case '_':             /* $_: last read line string */
       c = nextc();
       if(parser_is_identchar()) {
-          tokadd('$');
-          tokadd('_');
-          break;
+        tokadd('$');
+        tokadd('_');
+        break;
       }
       pushback(c);
       c = '_';
@@ -5559,8 +5567,8 @@ retry:
     case '7': case '8': case '9':
       tokadd('$');
       do {
-          tokadd(c);
-          c = nextc();
+        tokadd(c);
+        c = nextc();
       } while(c != -1 && ISDIGIT(c));
       pushback(c);
       if(last_state == EXPR_FNAME) goto gvar;
@@ -5662,7 +5670,7 @@ retry:
       } else {
         if(lex_state == EXPR_FNAME) {
           if((c = nextc()) == '=' && !peek('~') && !peek('>') &&
-              (!peek('=') || (lex_p + 1 < lex_pend && lex_p[1] == '>'))) {
+              (!peek('=') || (peek_n('>', 1)))) {
             result = tIDENTIFIER;
             tokadd(c);
             tokfix();
@@ -5676,8 +5684,9 @@ retry:
           result = tIDENTIFIER;
         }
       }
-      if((lex_state == EXPR_BEG && !cmd_state) || IS_ARG()) {
-        if(peek(':') && !(lex_p + 1 < lex_pend && lex_p[1] == ':')) {
+
+      if(IS_LABEL_POSSIBLE()) {
+        if(IS_LABEL_SUFFIX(0)) {
           lex_state = EXPR_BEG;
           nextc();
           set_yylval_name(TOK_INTERN(!ENC_SINGLE(mb)));
@@ -5738,7 +5747,8 @@ retry:
       ID ident = TOK_INTERN(!ENC_SINGLE(mb));
 
       set_yylval_name(ident);
-      if(last_state != EXPR_DOT && is_local_id(ident) && lvar_defined(ident)) {
+      if(last_state != EXPR_DOT && last_state != EXPR_FNAME &&
+          is_local_id(ident) && lvar_defined(ident)) {
         lex_state = EXPR_END;
       }
     }

@@ -8,6 +8,7 @@
 #include "stack_variables.hpp"
 #include "builtin/constantscope.hpp"
 #include "builtin/module.hpp"
+#include "version.h"
 
 #include "instruments/tooling.hpp"
 
@@ -61,7 +62,7 @@ namespace jit {
 
     setup_block_scope();
 
-    if(ctx_->llvm_state()->config().version >= 19) {
+    if(!LANGUAGE_18_ENABLED) {
       import_args_19_style();
     }
 

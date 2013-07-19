@@ -286,8 +286,9 @@ extern "C" {
   }
 
   VALUE rb_str_new4(VALUE string) {
-    if(rb_obj_frozen_p(string))
+    if(rb_obj_frozen_p(string)) {
       return string;
+    }
 
     VALUE str = rb_obj_freeze(rb_str_dup(string));
 
@@ -427,14 +428,6 @@ extern "C" {
   }
 #define HAVE_RB_STR_COPIED_PTR 1
 
-  void rb_str_flush(VALUE self) {
-    // Using pinned ByteArray, we don't need this anymore.
-  }
-
-  void rb_str_update(VALUE self) {
-    // Using pinned ByteArray, we don't need this anymore.
-  }
-
   char* rb_str_ptr_readonly(VALUE self) {
     NativeMethodEnvironment* env = NativeMethodEnvironment::get();
 
@@ -484,6 +477,16 @@ extern "C" {
     String* string = capi_get_string(env, self);
 
     return string->hash_string(env->state());
+  }
+
+  void rb_str_update(VALUE self, long beg, long end, VALUE replacement) {
+    NativeMethodEnvironment* env = NativeMethodEnvironment::get();
+
+    String* string = capi_get_string(env, self);
+    Class* klass = Module::mirror(env->state(), string);
+
+    VALUE mirror = capi_fast_call(env->get_handle(klass), rb_intern("new"), 1, self);
+    capi_fast_call(mirror, rb_intern("splice"), 3, LONG2FIX(beg), LONG2FIX(end), replacement);
   }
 
   VALUE rb_str_equal(VALUE self, VALUE other) {

@@ -123,14 +123,11 @@ extern "C" {
   rb_encoding* rb_enc_get(VALUE obj) {
     NativeMethodEnvironment* env = NativeMethodEnvironment::get();
 
-    int index = rb_enc_get_index(obj);
-    if(index < 0) return 0;
+    Object* val = env->get_object(obj);
+    if(!val->reference_p() && !val->symbol_p()) return 0;
+    Encoding* enc = Encoding::get_object_encoding(env->state(), val);
 
-    Encoding* enc = try_as<Encoding>(
-        Encoding::encoding_list(env->state())->get(env->state(), index));
-
-    if(!enc) return 0;
-
+    if(enc->nil_p()) return 0;
     return enc->get_encoding();
   }
 
@@ -415,5 +412,10 @@ extern "C" {
     } else {
       rb_raise(rb_eArgError, "invalid byte sequence in %s", rb_enc_name(enc));
     }
+  }
+
+  // TODO: respect the encoding parameter
+  ID rb_intern3(const char* string, long len, rb_encoding* enc) {
+    return rb_intern2(string, len);
   }
 }

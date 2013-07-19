@@ -12,6 +12,7 @@
 #include "missing/math.h"
 #include "object_utils.hpp"
 #include "ontology.hpp"
+#include "version.h"
 
 #define BASIC_CLASS(blah) G(blah)
 #define NEW_STRUCT(obj, str, kls, kind) \
@@ -43,12 +44,6 @@ namespace rubinius {
    */
   static int mp_set_long MPA(mp_int* a, unsigned long b) {
     mp_zero(a);
-
-    int digits = 0;
-    unsigned long tmp = b;
-    do {
-      ++digits;
-    } while((tmp >>= DIGIT_BIT) > 0);
 
     while(b > MP_DIGIT_MAX) {
       a->dp[0] |= (b >> DIGIT_BIT);
@@ -236,7 +231,16 @@ namespace rubinius {
     mp_int* a = o->mp_val();
 
     if(num < 0) {
-      mp_set_int(XST, a, (unsigned int)-num);
+      // We can't invert num if it's the minimal value, since
+      // that is not representable in a signed value. Therefore
+      // we add one, invert it and fix it up.
+      if(num == INT_MIN) {
+        long tmp = num + 1;
+        mp_set_int(XST, a, (unsigned int)-tmp);
+        mp_add_d(XST, a, 1, a);
+      } else {
+        mp_set_int(XST, a, (unsigned int)-num);
+      }
       a->sign = MP_NEG;
     } else {
       mp_set_int(XST, a, (unsigned int)num);
@@ -255,7 +259,16 @@ namespace rubinius {
     mp_int* a = o->mp_val();
 
     if(num < 0) {
-      mp_set_long(XST, a, (unsigned long)-num);
+      // We can't invert num if it's the minimal value, since
+      // that is not representable in a signed value. Therefore
+      // we add one, invert it and fix it up.
+      if(num == LONG_MIN) {
+        long tmp = num + 1;
+        mp_set_long(XST, a, (unsigned long)-tmp);
+        mp_add_d(XST, a, 1, a);
+      } else {
+        mp_set_long(XST, a, (unsigned long)-num);
+      }
       a->sign = MP_NEG;
     } else {
       mp_set_long(XST, a, (unsigned long)num);
@@ -290,7 +303,16 @@ namespace rubinius {
     Bignum* ret;
 
     if(val < 0) {
-      ret = Bignum::from(state, (unsigned long long)-val);
+      // We can't invert num if it's the minimal value, since
+      // that is not representable in a signed value. Therefore
+      // we add one, invert it and fix it up.
+      if(val == LLONG_MIN) {
+        long long tmp = val + 1;
+        ret = Bignum::from(state, (unsigned long long)-tmp);
+        mp_add_d(XST, ret->mp_val(), 1, ret->mp_val());
+      } else {
+        ret = Bignum::from(state, (unsigned long long)-val);
+      }
       ret->mp_val()->sign = MP_NEG;
     } else {
       ret = Bignum::from(state, (unsigned long long)val);
@@ -569,7 +591,7 @@ namespace rubinius {
   }
 
   Integer* Bignum::bit_and(STATE, Float* b) {
-    if(!LANGUAGE_18_ENABLED(state)) {
+    if(!LANGUAGE_18_ENABLED) {
       Exception::type_error(state, "can't convert Float into Integer for bitwise arithmetic");
     }
     return bit_and(state, Bignum::from_double(state, b->val));
@@ -588,7 +610,7 @@ namespace rubinius {
   }
 
   Integer* Bignum::bit_or(STATE, Float* b) {
-    if(!LANGUAGE_18_ENABLED(state)) {
+    if(!LANGUAGE_18_ENABLED) {
       Exception::type_error(state, "can't convert Float into Integer for bitwise arithmetic");
     }
     return bit_or(state, Bignum::from_double(state, b->val));
@@ -606,7 +628,7 @@ namespace rubinius {
   }
 
   Integer* Bignum::bit_xor(STATE, Float* b) {
-    if(!LANGUAGE_18_ENABLED(state)) {
+    if(!LANGUAGE_18_ENABLED) {
       Exception::type_error(state, "can't convert Float into Integer for bitwise arithmetic");
     }
     return bit_xor(state, Bignum::from_double(state, b->val));
@@ -719,7 +741,7 @@ namespace rubinius {
 
     native_int exp = exponent->to_native();
 
-    if(!LANGUAGE_18_ENABLED(state) && exp < 0) {
+    if(!LANGUAGE_18_ENABLED && exp < 0) {
       return Primitives::failure();
     }
 
@@ -733,7 +755,7 @@ namespace rubinius {
   }
 
   Object* Bignum::pow(STATE, Bignum *exponent) {
-    if(!LANGUAGE_18_ENABLED(state) && CBOOL(exponent->lt(state, Fixnum::from(0)))) {
+    if(!LANGUAGE_18_ENABLED && CBOOL(exponent->lt(state, Fixnum::from(0)))) {
       return Primitives::failure();
     }
 

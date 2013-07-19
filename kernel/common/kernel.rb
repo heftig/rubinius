@@ -139,7 +139,7 @@ module Kernel
   module_function :print
 
   def srand(seed=undefined)
-    if seed.equal? undefined
+    if undefined.equal? seed
       seed = Thread.current.randomizer.generate_seed
     end
 
@@ -184,7 +184,7 @@ module Kernel
     # without an argument, so we call it again passing undefined
     # to mean "sleep forever"
     #
-    if duration.equal? undefined
+    if undefined.equal? duration
       return sleep(undefined)
     end
 
@@ -273,6 +273,7 @@ module Kernel
   end
 
   def extend(*modules)
+    raise ArgumentError, "wrong number of arguments (0 for 1+)" if modules.empty?
     Rubinius.check_frozen
 
     modules.reverse_each do |mod|
@@ -449,7 +450,7 @@ module Kernel
   end
 
   def private_methods(all=true)
-    private_singleton_methods() | Rubinius::Type.object_class(self).private_instance_methods()
+    private_singleton_methods() | Rubinius::Type.object_class(self).private_instance_methods(all)
   end
 
   def private_singleton_methods

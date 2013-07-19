@@ -6,7 +6,12 @@ module Enumerable
     ::Enumerator.new do |yielder|
       previous = nil
       accumulate = []
-      block = initial_state.nil? ? original_block : Proc.new{ |val| original_block.yield(val, initial_state.clone)}
+      block = if initial_state.nil?
+        original_block
+      else
+        duplicated_initial_state = initial_state.dup
+        Proc.new{ |val| original_block.yield(val, duplicated_initial_state)}
+      end
       each do |val|
         key = block.yield(val)
         if key.nil? || (key.is_a?(Symbol) && key.to_s[0, 1] == "_")
@@ -75,9 +80,9 @@ module Enumerable
 
   def slice_before(arg = undefined, &block)
     if block_given?
-      has_init = !(arg.equal? undefined)
+      has_init = !(undefined.equal? arg)
     else
-      raise ArgumentError, "wrong number of arguments (0 for 1)" if arg.equal? undefined
+      raise ArgumentError, "wrong number of arguments (0 for 1)" if undefined.equal? arg
       block = Proc.new{ |elem| arg === elem }
     end
     Enumerator.new do |yielder|

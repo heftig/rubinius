@@ -16,6 +16,10 @@ describe "Kernel#eval" do
     eval("2 + 3").should == 5
   end
 
+  it "coerces an object to string" do
+    eval(EvalSpecs::CoercedObject.new).should == 5
+  end
+
   it "evaluates within the scope of the eval" do
     EvalSpecs::A::B.name.should == "EvalSpecs::A::B"
   end
@@ -231,7 +235,7 @@ describe "Kernel#eval" do
     lambda {
       eval('if true',TOPLEVEL_BINDING,expected)
     }.should raise_error(SyntaxError) { |e|
-      e.message.should =~ /^#{expected}:1:.+/
+      e.message.should =~ /#{expected}:1:.+/
     }
   end
 

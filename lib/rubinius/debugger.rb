@@ -43,9 +43,13 @@ class Rubinius::Debugger
     @frames = []
 
     @variables = {
-      :show_ip => false,
-      :show_bytecode => false,
-      :highlight => false
+      :show_ip              => false,
+      :show_bytecode        => false,
+      :highlight            => false,
+      :list_command_history => {
+        :path        => nil,
+        :center_line => nil
+      }
     }
 
     @loaded_hook = proc { |file|
@@ -153,7 +157,13 @@ class Rubinius::Debugger
 
       if bp
         # Only break out if the hit was valid
-        break if bp.hit!(locs.first)
+        if bp.hit!(locs.first)
+          if bp.has_condition?
+            break if @current_frame.run(bp.condition)
+          else
+            break
+          end
+        end
       else
         break
       end
@@ -162,6 +172,7 @@ class Rubinius::Debugger
     puts
     info "Breakpoint: #{@current_frame.describe}"
     show_code
+    eval_code(@breakpoint.commands) if @breakpoint && @breakpoint.has_commands?
 
     if @variables[:show_bytecode]
       decode_one
@@ -172,6 +183,7 @@ class Rubinius::Debugger
   # Get a command from the user to run using readline
   #
   def accept_commands
+    command_list_code = []
     cmd = Readline.readline "debug> "
 
     if cmd.nil?
@@ -188,6 +200,30 @@ class Rubinius::Debugger
     runner = Command.commands.find { |k| k.match?(command) }
 
     if runner
+      if runner == Command::CommandsList
+        bp_id = (args || @breakpoints.size).to_i
+
+        if @breakpoints.empty?
+          puts "No breakpoint set"
+          return
+        elsif bp_id > @breakpoints.size || bp_id < 1
+          puts "Invalid breakpoint number."
+          return
+        end
+
+        puts "Type commands for breakpoint ##{bp_id}, one per line."
+        puts "End with a line saying just 'END'."
+        code = Readline.readline "> "
+        while code != 'END'
+          command_list_code << code
+          code = Readline.readline "> "
+        end
+        args = {
+          :bp_id => bp_id,
+          :code  => command_list_code.empty? ? nil : command_list_code.join(";")
+        }
+      end
+
       runner.new(self).run args
     else
       puts "Unrecognized command: #{command}"
@@ -196,6 +232,10 @@ class Rubinius::Debugger
 
     # Save it to the history.
     @history_io.puts cmd
+    unless command_list_code.empty?
+      command_list_code << "END"
+      @history_io.puts command_list_code.join("\n")
+    end
   end
 
   def eval_code(args)
@@ -225,7 +265,7 @@ class Rubinius::Debugger
     end
   end
 
-  def set_breakpoint_method(descriptor, method, line=nil)
+  def set_breakpoint_method(descriptor, method, line=nil, condition=nil)
     exec = method.executable
 
     unless exec.kind_of?(Rubinius::CompiledCode)
@@ -245,7 +285,7 @@ class Rubinius::Debugger
       ip = 0
     end
 
-    bp = BreakPoint.new(descriptor, exec, ip, line)
+    bp = BreakPoint.new(descriptor, exec, ip, line, condition)
     bp.activate
 
     @breakpoints << bp
@@ -305,9 +345,38 @@ class Rubinius::Debugger
     return nil
   end
 
-  def show_code(line=@current_frame.line)
-    path = @current_frame.method.active_path
+  def list_code_around_line(path, center_line, lines_to_show)
+    lines_around = lines_to_show / 2
+    start_line   = center_line - lines_around
+    end_line     = center_line + lines_around
 
+    list_code_range(path, start_line, end_line, center_line)
+  end
+
+  def list_code_range(path, start_line, end_line, center_line)
+    if !File.exists?(path) && !File.exists?(File.join(@root_dir, path))
+      error "Cannot find file #{path}"
+      return
+    end
+
+    if start_line > @file_lines[path].size
+      error "Line number #{@file_lines[path].size + 1} out of range: #{path} has #{@file_lines[path].size} lines."
+      return
+    end
+
+    start_line = 1 if start_line < 1
+    end_line   = @file_lines[path].size if end_line > @file_lines[path].size
+
+    @variables[:list_command_history][:path]        = path
+    @variables[:list_command_history][:center_line] = center_line
+
+    (start_line).upto(end_line) do |i|
+      show_code(i, path)
+    end
+  end
+
+  def show_code(line = @current_frame.line,
+                path = @current_frame.method.active_path)
     if str = @file_lines[path][line - 1]
       if @variables[:highlight]
         if fin = @current_frame.method.first_ip_on_line(line + 1)

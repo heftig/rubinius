@@ -7,6 +7,7 @@
 #include "builtin/poly_inline_cache.hpp"
 #include "builtin/respond_to_cache.hpp"
 #include "builtin/lookuptable.hpp"
+#include "version.h"
 
 #include "llvm/jit_operations.hpp"
 #include "llvm/inline.hpp"
@@ -1835,10 +1836,10 @@ namespace rubinius {
           // Run the policy on the block code here, if we're not going to
           // inline it, don't inline this either.
           InlineOptions opts;
-          if(llvm_state()->config().version >= 19) {
-            opts.inlining_block_19();
-          } else {
+          if(LANGUAGE_18_ENABLED) {
             opts.inlining_block();
+          } else {
+            opts.inlining_block_19();
           }
 
           InlineDecision decision = inline_policy()->inline_p(

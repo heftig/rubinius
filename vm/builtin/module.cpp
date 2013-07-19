@@ -17,6 +17,7 @@
 #include "object_utils.hpp"
 #include "objectmemory.hpp"
 #include "on_stack.hpp"
+#include "version.h"
 
 #include <string>
 
@@ -98,7 +99,7 @@ namespace rubinius {
 
   String* Module::get_name(STATE) {
     if(module_name()->nil_p()) {
-      if(LANGUAGE_18_ENABLED(state)) {
+      if(LANGUAGE_18_ENABLED) {
         return String::create(state, "");
       } else {
         return nil<String>();

@@ -4,6 +4,7 @@
 #include "llvm/jit_inline_block.hpp"
 #include "llvm/stack_args.hpp"
 #include "llvm/method_info.hpp"
+#include "version.h"
 
 #include "call_frame.hpp"
 
@@ -99,7 +100,7 @@ namespace jit {
 
     setup_inline_scope(self, constant(cNil, obj_type), mod);
 
-    if(ctx_->llvm_state()->config().version >= 19) {
+    if(!LANGUAGE_18_ENABLED) {
       // We don't support splat in an block method!
       assert(machine_code_->splat_position < 0);
 

@@ -77,11 +77,9 @@ namespace rubinius {
 
     template <class T>
       void encoding(T state, Encoding* obj) {
-        if(encoding_ != obj) {
-          ascii_only_ = cNil;
-          valid_encoding_ = cNil;
-          num_chars_ = nil<Fixnum>();
-        }
+        ascii_only_ = cNil;
+        valid_encoding_ = cNil;
+        num_chars_ = nil<Fixnum>();
         encoding_ = obj;
         this->write_barrier(state, obj);
       }
@@ -116,7 +114,7 @@ namespace rubinius {
       return hash_str(bp, sz, state->hash_seed());
     }
 
-    // Rubinius.primitive :string_equal
+    // Rubinius.primitive+ :string_equal
     Object* equal(STATE, String* other) {
       if(Encoding::compatible_p(state, this, other)->nil_p()) return cFalse;
       if(this->num_bytes() != other->num_bytes()) return cFalse;
@@ -129,7 +127,7 @@ namespace rubinius {
     }
 
 
-    // Rubinius.primitive :string_secure_compare
+    // Rubinius.primitive+ :string_secure_compare
     Object* secure_compare(STATE, String* other);
 
     // Returns the number of bytes this String contains
@@ -139,7 +137,7 @@ namespace rubinius {
 
     native_int char_size(STATE);
 
-    // Rubinius.primitive :string_size
+    // Rubinius.primitive+ :string_size
     Fixnum* size(STATE);
 
     // Access the String as a char* directly. WARNING: doesn't necessarily
@@ -173,8 +171,26 @@ namespace rubinius {
     // Rubinius.primitive :symbol_lookup
     Symbol* to_sym(STATE);
 
+    String* string_dup_slow(STATE);
+
     // Rubinius.primitive :string_dup
-    String* string_dup(STATE);
+    String* string_dup(STATE) {
+      if(likely(klass_ == G(string) && ivars_->nil_p())) {
+        // Optimal case, we have a plain string with no
+        // metaclass or ivars. In that case we don't need
+        // a write barrier and we can copy the raw string
+        // object directly.
+        String* so = state->vm()->new_young_string_dirty();
+        if(likely(so)) {
+          so->copy_body(state->vm(), this);
+          so->shared(state, cTrue);
+          shared(state, cTrue);
+          infect(state, so);
+          return so;
+        }
+      }
+      return string_dup_slow(state);
+    }
 
     String* add(STATE, String* other);
     String* add(STATE, const char* other);
@@ -292,13 +308,13 @@ namespace rubinius {
     // Rubinius.primitive :string_resize_capacity
     String* resize_capacity(STATE, Fixnum* count);
 
-    // Rubinius.primitive :string_encoding
+    // Rubinius.primitive+ :string_encoding
     Encoding* encoding(STATE);
 
-    // Rubinius.primitive :string_ascii_only_p
+    // Rubinius.primitive+ :string_ascii_only_p
     Object* ascii_only_p(STATE);
 
-    // Rubinius.primitive :string_valid_encoding_p
+    // Rubinius.primitive+ :string_valid_encoding_p
     Object* valid_encoding_p(STATE);
 
     int codepoint(STATE, bool* found);

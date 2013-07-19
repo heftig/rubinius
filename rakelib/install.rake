@@ -33,7 +33,10 @@ end
 def install_file(source, prefix, dest, name=nil, options={})
   return if File.directory? source
 
-  dest_name = File.join(dest, source[prefix.size..-1])
+  options, name = name, nil if name.kind_of? Hash
+  name = source[prefix.size..-1] unless name
+
+  dest_name = File.join(dest, name)
   dir = File.dirname dest_name
   mkdir_p dir, :verbose => $verbose unless File.directory? dir
 
@@ -94,9 +97,9 @@ end
 
 def install_lib_excludes(prefix, list)
   list.exclude("#{prefix}/**/ext/melbourne/build/*.*")
-  ["18", "19", "20"].each do |ver|
-    unless BUILD_CONFIG[:version_list].include? ver
-      list.exclude("#{prefix}/#{ver}")
+  BUILD_CONFIG[:supported_versions].each do |ver|
+    unless BUILD_CONFIG[:language_version] == ver
+      list.exclude(%r[^#{prefix}/#{ver}/.*])
     end
   end
 end
@@ -114,14 +117,16 @@ def install_lib(prefix, target)
   list = FileList["#{prefix}/**/*.rb", "#{prefix}/**/rubygems/**/*"]
   install_lib_excludes prefix, list
 
-  list.each do |name|
-    install_file name, prefix, "#{target}#{BUILD_CONFIG[:libdir]}"
+  re = %r[/lib/#{BUILD_CONFIG[:language_version]}/]
+  list.each do |source|
+    name = source.gsub(re, "/lib/")[prefix.size..-1]
+    install_file source, prefix, "#{target}#{BUILD_CONFIG[:libdir]}", name
   end
 end
 
 def install_transcoders(prefix, target)
-  FileList["#{prefix}/19/encoding/converter/*#{$dlext}"].each do |name|
-    install_file name, prefix, "#{target}#{BUILD_CONFIG[:libdir]}", :mode => 0755
+  FileList["#{prefix}/*#{$dlext}"].each do |source|
+    install_file source, prefix, "#{target}#{BUILD_CONFIG[:encdir]}", :mode => 0755
   end
 end
 
@@ -134,9 +139,12 @@ end
 def install_cext(prefix, target)
   list = FileList["#{prefix}/**/ext/**/*.#{$dlext}"]
   list.exclude("**/melbourne/build/*.*")
+  install_lib_excludes prefix, list
 
-  list.each do |name|
-    install_file name, prefix, "#{target}#{BUILD_CONFIG[:libdir]}"
+  re = %r[/lib/#{BUILD_CONFIG[:language_version]}/]
+  list.each do |source|
+    name = source.gsub(re, "/lib/")[prefix.size..-1]
+    install_file source, prefix, "#{target}#{BUILD_CONFIG[:libdir]}", name
   end
 end
 
@@ -191,12 +199,9 @@ exec #{BUILD_CONFIG[:stagingdir]}#{BUILD_CONFIG[:bindir]}/$EXE "$@"
 
   task :capi_include do
     if BUILD_CONFIG[:stagingdir]
-      install_capi_include "#{BUILD_CONFIG[:sourcedir]}/vm/capi/18/include",
-                           "#{BUILD_CONFIG[:stagingdir]}#{BUILD_CONFIG[:include18dir]}"
-      install_capi_include "#{BUILD_CONFIG[:sourcedir]}/vm/capi/19/include",
-                           "#{BUILD_CONFIG[:stagingdir]}#{BUILD_CONFIG[:include19dir]}"
-      install_capi_include "#{BUILD_CONFIG[:sourcedir]}/vm/capi/20/include",
-                           "#{BUILD_CONFIG[:stagingdir]}#{BUILD_CONFIG[:include20dir]}"
+      v = BUILD_CONFIG[:language_version]
+      install_capi_include "#{BUILD_CONFIG[:sourcedir]}/vm/capi/#{v}/include",
+                           "#{BUILD_CONFIG[:stagingdir]}#{BUILD_CONFIG[:"includedir"]}"
     end
   end
 
@@ -255,6 +260,7 @@ site:    #{prefix}#{BUILD_CONFIG[:sitedir]}
 vendor:  #{prefix}#{BUILD_CONFIG[:vendordir]}
 man:     #{prefix}#{BUILD_CONFIG[:mandir]}
 gems:    #{prefix}#{BUILD_CONFIG[:gemsdir]}
+include: #{prefix}#{BUILD_CONFIG[:includedir]}
 
 Please ensure that the paths to these directories are writable
 by the current user. Otherwise, run 'rake install' with the
@@ -267,12 +273,8 @@ oppropriate command to elevate permissions (eg su, sudo).
         destdir = ENV['DESTDIR'] || ''
         prefixdir = File.join(destdir, BUILD_CONFIG[:prefixdir])
 
-        install_capi_include "#{stagingdir}#{BUILD_CONFIG[:include18dir]}",
-                             "#{prefixdir}#{BUILD_CONFIG[:include18dir]}"
-        install_capi_include "#{stagingdir}#{BUILD_CONFIG[:include19dir]}",
-                             "#{prefixdir}#{BUILD_CONFIG[:include19dir]}"
-        install_capi_include "#{stagingdir}#{BUILD_CONFIG[:include20dir]}",
-                             "#{prefixdir}#{BUILD_CONFIG[:include20dir]}"
+        install_capi_include "#{stagingdir}#{BUILD_CONFIG[:includedir]}",
+                             "#{prefixdir}#{BUILD_CONFIG[:includedir]}"
 
         install_runtime "#{stagingdir}#{BUILD_CONFIG[:runtimedir]}", prefixdir
 
@@ -280,7 +282,7 @@ oppropriate command to elevate permissions (eg su, sudo).
 
         install_lib "#{stagingdir}#{BUILD_CONFIG[:libdir]}", prefixdir
 
-        install_transcoders "#{stagingdir}#{BUILD_CONFIG[:libdir]}", prefixdir
+        install_transcoders "#{stagingdir}#{BUILD_CONFIG[:encdir]}", prefixdir
 
         install_tooling "#{stagingdir}#{BUILD_CONFIG[:libdir]}", prefixdir
 

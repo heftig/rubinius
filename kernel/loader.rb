@@ -43,6 +43,7 @@ module Rubinius
 
     # Finish setting up after loading kernel.
     def preamble
+      set_program_name "rbx"
       @stage = "running Loader preamble"
 
       Object.const_set :ENV, EnvironmentVariables.new
@@ -51,14 +52,6 @@ module Rubinius
       TOPLEVEL_BINDING.variables.method_visibility = :private
 
       $VERBOSE = false
-
-      # We export the language mode into the environment so subprocesses like
-      # extension compiling during gem installs use the correct mode.
-      options = ENV["RBXOPT"]
-      language_mode = "-X#{Rubinius::RUBY_LIB_VERSION}"
-      unless options and options.include? language_mode
-        ENV["RBXOPT"] = "#{options} #{language_mode}".strip
-      end
     end
 
     # Setup $LOAD_PATH.
@@ -124,8 +117,7 @@ module Rubinius
 
     def show_syntax_error(e)
       STDERR.puts "A syntax error has occurred:"
-      STDERR.puts "    #{e.reason}"
-      STDERR.puts "    near line #{e.file}:#{e.line}, column #{e.column}"
+      STDERR.puts "    #{e.message}"
       STDERR.puts "\nCode:\n#{e.code}"
       if e.column
         STDERR.puts((" " * (e.column - 1)) + "^")
@@ -268,6 +260,7 @@ module Rubinius
       end
 
       options.on "-c", "Only check the syntax" do
+        @run_irb = false
         @check_syntax = true
       end
 
@@ -609,6 +602,7 @@ to rebuild the compiler.
     def evals
       return if @evals.empty?
 
+      @run_irb = false
       @stage = "evaluating command line code"
 
       if @input_loop
@@ -625,6 +619,8 @@ to rebuild the compiler.
     # Run the script passed on the command line
     def script
       return unless @script and @evals.empty?
+
+      @run_irb = false
 
       handle_simple_options(ARGV) if @simple_options
 
@@ -703,7 +699,7 @@ to rebuild the compiler.
 
     # Run IRB unless we were passed -e, -S arguments or a script to run.
     def irb
-      return if $0 or not @run_irb
+      return unless @run_irb
 
       @stage = "running IRB"
 

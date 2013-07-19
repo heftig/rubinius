@@ -2,6 +2,7 @@
 
 #include "builtin/encoding.hpp"
 #include "builtin/string.hpp"
+#include "version.h"
 
 class TestString : public CxxTest::TestSuite, public VMTest {
 public:
@@ -244,7 +245,7 @@ public:
     str = String::create(state, "0x3.4");
     ret = str->to_f(state, cTrue);
     val = Float::create(state, 0.0);
-    if(LANGUAGE_18_ENABLED(state)) {
+    if(LANGUAGE_18_ENABLED) {
       TS_ASSERT_EQUALS(ret, cNil);
     } else {
       TS_ASSERT(val->equal(state, ret));
@@ -413,7 +414,7 @@ public:
     str = String::create(state, "_12");
     val = str->to_i(state, Fixnum::from(10), cFalse);
     TS_ASSERT(kind_of<Fixnum>(val));
-    if(LANGUAGE_18_ENABLED(state)) {
+    if(LANGUAGE_18_ENABLED) {
       TS_ASSERT_EQUALS(as<Fixnum>(val)->to_native(), 12);
     } else {
       TS_ASSERT_EQUALS(as<Fixnum>(val)->to_native(), 0);

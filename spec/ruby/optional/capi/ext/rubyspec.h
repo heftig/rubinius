@@ -237,7 +237,9 @@
 #ifdef RUBY_VERSION_IS_1_9_3
 #define HAVE_RB_CLASS_SUPERCLASS           1
 #endif
+
 #define HAVE_RB_LONG2INT                   1
+#define HAVE_RB_INTERN3                    1
 #endif
 
 #define HAVE_RB_ITER_BREAK                 1
@@ -494,6 +496,7 @@
 #define HAVE_RB_STR_FLUSH                  1
 #define HAVE_RB_STR_FREEZE                 1
 #define HAVE_RB_STR_HASH                   1
+#define HAVE_RB_STR_UPDATE                 1
 #define HAVE_RB_STR_INSPECT                1
 #define HAVE_RB_STR_INTERN                 1
 #define HAVE_RB_STR_LEN                    1

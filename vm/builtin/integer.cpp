@@ -6,6 +6,7 @@
 #include "object_utils.hpp"
 #include "ontology.hpp"
 #include "configuration.hpp"
+#include "version.h"
 
 namespace rubinius {
 
@@ -139,7 +140,7 @@ namespace rubinius {
       if(*str == '_') {
         if(CBOOL(strict)) {
           return nil<Integer>();
-        } else if(!LANGUAGE_18_ENABLED(state)) {
+        } else if(!LANGUAGE_18_ENABLED) {
           return value;
         }
       }
