@@ -1,16 +1,5 @@
 # -*- encoding: us-ascii -*-
 
-class Object
-  def __marshal__(ms, strip_ivars = false)
-    out = ms.serialize_extended_object self
-    out << "o"
-    cls = Rubinius::Type.object_class self
-    name = Rubinius::Type.module_inspect cls
-    out << ms.serialize(name.to_sym)
-    out << ms.serialize_instance_variables_suffix(self, true, strip_ivars)
-  end
-end
-
 class Range
   def __marshal__(ms)
     super(ms, true)
@@ -571,13 +560,6 @@ module Marshal
       else
         obj = Regexp.new s, consume_byte
       end
-
-      store_unique_object obj
-    end
-
-    def construct_string
-      obj = get_byte_sequence
-      obj = get_user_class.new obj if @user_class
 
       store_unique_object obj
     end

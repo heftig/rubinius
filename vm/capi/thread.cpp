@@ -148,6 +148,67 @@ extern "C" {
     return ret;
   }
 
+  // THAR BE MORE DRAGONS.
+  //
+  // When venturing through the valleys of the unmanaged, our hero must
+  // remain vigilant and disciplined! If she should ever find a VALUE for
+  // a reference in her travels: Look away! For these VALUEs are pure
+  // death! Our hero must steel herself and continue on her quest, returning
+  // as soon as possible to the castle of the managed.
+  void* rb_thread_call_without_gvl(void *(*func)(void *data), void* data1,
+                                  rb_unblock_function_t ubf, void* ubf_data) {
+    NativeMethodEnvironment* env = NativeMethodEnvironment::get();
+    State* state = env->state();
+    void* ret = NULL;
+
+    if(ubf == RUBY_UBF_IO || ubf == RUBY_UBF_PROCESS) {
+      state->vm()->interrupt_with_signal();
+    } else {
+      state->vm()->wait_on_custom_function(ubf, ubf_data);
+    }
+    LEAVE_CAPI(env->state());
+    {
+      GCIndependent guard(env);
+      ret = (*func)(data1);
+    }
+    ENTER_CAPI(env->state());
+    state->vm()->clear_waiter();
+
+    return ret;
+  }
+
+  // THAR BE EVEN MORE DRAGONS.
+  //
+  // When venturing through the valleys of the unmanaged, our hero must
+  // remain vigilant and disciplined! If she should ever find a VALUE for
+  // a reference in her travels: Look away! For these VALUEs are pure
+  // death! Our hero must steel herself and continue on her quest, returning
+  // as soon as possible to the castle of the managed.
+  void* rb_thread_call_without_gvl2(void *(*func)(void *data), void* data1,
+                                   rb_unblock_function_t ubf, void* ubf_data) {
+    NativeMethodEnvironment* env = NativeMethodEnvironment::get();
+    State* state = env->state();
+    void* ret = NULL;
+
+    if(!state->check_async(env->current_call_frame())) {
+      return ret;
+    }
+    if(ubf == RUBY_UBF_IO || ubf == RUBY_UBF_PROCESS) {
+      state->vm()->interrupt_with_signal();
+    } else {
+      state->vm()->wait_on_custom_function(ubf, ubf_data);
+    }
+    LEAVE_CAPI(env->state());
+    {
+      GCIndependent guard(env);
+      ret = (*func)(data1);
+    }
+    ENTER_CAPI(env->state());
+    state->vm()->clear_waiter();
+
+    return ret;
+  }
+
   // More Experimental API support. This is the useful analog to the above
   // function, allowing you to selecting reaquire the GIL and do some work.
 
@@ -177,7 +238,7 @@ extern "C" {
     self->locals_remove(state, state->symbol("function"));
     self->locals_remove(state, state->symbol("argument"));
 
-    NativeMethodFrame nmf(0, nm);
+    NativeMethodFrame nmf(env, 0, nm);
     CallFrame cf;
     cf.previous = 0;
     cf.constant_scope_ = 0;

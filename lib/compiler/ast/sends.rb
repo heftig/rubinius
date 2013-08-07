@@ -3,8 +3,7 @@
 module Rubinius
   module AST
     class Send < Node
-      attr_accessor :receiver, :name, :privately, :block, :variable
-      attr_accessor :check_for_local, :vcall_style
+      attr_accessor :receiver, :name, :privately, :block, :variable, :vcall_style
 
       def initialize(line, receiver, name, privately=false, vcall_style=false)
         @line = line
@@ -12,12 +11,11 @@ module Rubinius
         @name = name
         @privately = privately
         @block = nil
-        @check_for_local = false
         @vcall_style = vcall_style
       end
 
       def check_local_reference(g)
-        if @receiver.kind_of? Self and (@check_for_local or g.state.eval?)
+        if @receiver.kind_of? Self and g.state.check_for_locals
           g.state.scope.search_local(@name)
         end
       end
@@ -296,7 +294,7 @@ module Rubinius
       end
 
       def splat?
-        @arguments.kind_of? SplatValue or @arguments.kind_of? ConcatArgs
+        @arguments.splat?
       end
 
       def bytecode(g)

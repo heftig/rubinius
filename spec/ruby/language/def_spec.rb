@@ -31,6 +31,38 @@ describe "Defining an 'initialize_copy' method" do
   end
 end
 
+ruby_version_is "2.0" do
+  describe "Defining an 'initialize_dup' method" do
+    it "sets the method's visibility to private" do
+      class DefInitializeDupSpec
+        def initialize_dup
+        end
+      end
+      DefInitializeDupSpec.should have_private_instance_method(:initialize_dup, false)
+    end
+  end
+
+  describe "Defining an 'initialize_clone' method" do
+    it "sets the method's visibility to private" do
+      class DefInitializeCloneSpec
+        def initialize_clone
+        end
+      end
+      DefInitializeCloneSpec.should have_private_instance_method(:initialize_clone, false)
+    end
+  end
+
+  describe "Defining a 'respond_to_missing?' method" do
+    it "sets the method's visibility to private" do
+      class DefRespondToMissingPSpec
+        def respond_to_missing?
+        end
+      end
+      DefRespondToMissingPSpec.should have_private_instance_method(:respond_to_missing?, false)
+    end
+  end
+end
+
 describe "An instance method definition with a splat" do
   it "accepts an unnamed '*' argument" do
     def foo(*); end;
@@ -115,6 +147,17 @@ describe "An instance method with a default argument" do
       [a,b,args]
     end
     foo(2,3,3).should == [2,3,[3]]
+  end
+
+  it "calls a method with the same name as the local" do
+    def bar
+      1
+    end
+    def foo(bar = bar)
+      bar
+    end
+    foo.should == 1
+    foo(2).should == 2
   end
 end
 

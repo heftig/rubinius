@@ -465,6 +465,30 @@ module Rubinius
         @pattern.bytecode(g)
         @value.bytecode(g)
         g.send :=~, 1
+        if @pattern.kind_of? RegexLiteral
+          regexp = Regexp.new(@pattern.source)
+          if table = regexp.name_table
+            table.sort_by { |name, idx| idx }.each do |name, idx|
+              local = g.state.scope.new_local name
+              g.last_match 5, idx.last - 1
+
+              case local
+              when Compiler::LocalVariable
+                g.set_local local.slot
+              when Compiler::EvalLocalVariable
+                g.push_variables
+                g.swap
+                g.push_literal name
+                g.swap
+                g.send :set_eval_local, 2, false
+              else
+                raise CompileError, "unknown type of local #{local.inspect}"
+              end
+
+              g.pop
+            end
+          end
+        end
       end
 
       def to_sexp
@@ -624,6 +648,10 @@ module Rubinius
         @line = line
         @value = expr
         @splat = nil
+      end
+
+      def block=(node)
+        @value.block = node if @value
       end
 
       def bytecode(g, force=false)

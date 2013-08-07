@@ -35,7 +35,7 @@ class Array
         # Do nothing, fall through to later case.
       elsif size_or_array.kind_of? Array
         ary = size_or_array
-      elsif size_or_array.respond_to? :to_ary
+      elsif Rubinius::Type.object_respond_to_ary?(size_or_array)
         ary = Rubinius::Type.coerce_to size_or_array, Array, :to_ary
       end
 
@@ -716,7 +716,7 @@ class Array
     # at those indexes into a new array and yield that array.
     #
     # num: the number of elements in each permutation
-    # p: the array (of size num) that we're filling in
+    # perm: the array (of size num) that we're filling in
     # index: what index we're filling in now
     # used: an array of booleans: whether a given index is already used
     #
@@ -923,21 +923,6 @@ class Array
 
   def to_ary
     self
-  end
-
-  def inspect
-    return "[]" if @total == 0
-
-    comma = ", "
-    result = "["
-
-    return "[...]" if Thread.detect_recursion self do
-      each { |o| result << o.inspect << comma }
-    end
-
-    Rubinius::Type.infect(result, self)
-    result.shorten!(2)
-    result << "]"
   end
 
   def transpose
@@ -1253,33 +1238,5 @@ class Array
   def __rescue_match__(exception)
     each { |x| return true if x === exception }
     false
-  end
-
-  # Custom API support to support Enumerator#next with :each
-  class ValueGenerator
-    def initialize(array)
-      @array = array
-      @index = 0
-    end
-
-    def next?
-      @index < @array.size
-    end
-
-    def next
-      val = @array.at(@index)
-      @index += 1
-      return val
-    end
-
-    def rewind
-      @index = 0
-    end
-  end
-
-  def to_generator(method)
-    if method == :each
-      ValueGenerator.new(self)
-    end
   end
 end

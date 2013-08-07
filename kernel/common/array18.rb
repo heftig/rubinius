@@ -275,6 +275,7 @@ class Array
 
     out = new_reserved size
     recursively_flatten(self, out, level)
+    Rubinius::Type.infect(out, self)
     out
   end
 
@@ -492,6 +493,21 @@ class Array
 
   def sort(&block)
     dup.sort_inplace(&block)
+  end
+
+  def inspect
+    return "[]" if @total == 0
+
+    comma = ", "
+    result = "["
+
+    return "[...]" if Thread.detect_recursion self do
+      each { |o| result << o.inspect << comma }
+    end
+
+    Rubinius::Type.infect(result, self)
+    result.shorten!(2)
+    result << "]"
   end
 
   def to_s

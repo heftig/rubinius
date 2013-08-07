@@ -66,10 +66,7 @@ module Rubinius
       # This conforms more closely to MRI. It is necessary to support
       # paths that mkmf adds when compiling and installing native exts.
       additions = [
-        Rubinius::SITE_PATH,
-        "#{Rubinius::SITE_PATH}/#{Rubinius::CPU}-#{Rubinius::OS}",
         Rubinius::VENDOR_PATH,
-        "#{Rubinius::VENDOR_PATH}/#{Rubinius::CPU}-#{Rubinius::OS}",
         "#{@main_lib}/#{Rubinius::RUBY_LIB_VERSION}",
         @main_lib,
       ]
@@ -446,7 +443,7 @@ VM Options
      This option is recognized by the VM before any ruby code is loaded.
      It is used to set VM configuration options.
 
-     Use -Xconfig.print to see the list of options the VM recognizes.
+     Use -Xhelp to see the list of options the VM recognizes.
      All variables, even ones that the VM doesn't understand, are available
      in Rubinius::Config.
 
@@ -650,8 +647,6 @@ to rebuild the compiler.
 
     #Check Ruby syntax of source
     def check_syntax
-      syntax_ok = false
-
       case
       when Rubinius.ruby18?
         parser = Rubinius::Melbourne

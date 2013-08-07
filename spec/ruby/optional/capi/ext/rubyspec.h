@@ -519,6 +519,7 @@
 #define HAVE_STRINGVALUE                   1
 
 #ifdef RUBY_VERSION_IS_1_9
+#define HAVE_RB_STR_FREE                   1
 #define HAVE_RB_SPRINTF                    1
 #define HAVE_RB_LOCALE_STR_NEW             1
 #define HAVE_RB_LOCALE_STR_NEW_CSTR        1
@@ -551,6 +552,10 @@
 /* Thread */
 #define HAVE_RB_THREAD_ALONE               1
 #define HAVE_RB_THREAD_BLOCKING_REGION     1
+#ifdef RUBY_VERSION_IS_2_0
+#define HAVE_RB_THREAD_CALL_WITHOUT_GVL    1
+#define HAVE_RB_THREAD_CALL_WITHOUT_GVL2   1
+#endif
 #define HAVE_RB_THREAD_CURRENT             1
 #define HAVE_RB_THREAD_LOCAL_AREF          1
 #define HAVE_RB_THREAD_LOCAL_ASET          1

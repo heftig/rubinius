@@ -443,8 +443,9 @@ end
 
 class Module
   def method_table   ; @method_table ; end
-  def constant_table; @constant_table ; end
+  def constant_table ; @constant_table ; end
   def name           ; @module_name.to_s ; end
+  def origin         ; @origin ; end
 
   # Specialised allocator.
   #
@@ -508,7 +509,7 @@ class Module
   #
   # Basic version of .include used in kernel code.
   #
-  # Redefined in kernel/common/module.rb.
+  # Redefined in kernel/delta/module.rb.
   #
   def include(mod)
     mod.append_features(self)
@@ -570,7 +571,7 @@ class Module
   # Cannot be used as a toggle, and only
   # takes a single method name.
   #
-  # Redefined in kernel/common/module.rb.
+  # Redefined in kernel/delta/module.rb.
   #
   def private(name)
     if entry = @method_table.lookup(name)
@@ -598,7 +599,7 @@ class Module
   # of current method and stores it under the new name.
   # The two are independent.
   #
-  # Redefined in kernel/common/module.rb.
+  # Redefined in kernel/delta/module.rb.
   #
   def alias_method(new_name, current_name)
     # If we're aliasing a method we contain, just reference it directly, no

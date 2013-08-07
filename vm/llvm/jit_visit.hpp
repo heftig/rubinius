@@ -439,23 +439,28 @@ namespace rubinius {
      * 3 : Rubinius::Mirror class
      */
     void push_system_object(int which) {
-      // we're calling something that returns an Object
-      Signature sig(ctx_, ObjType);
-      // given a system state and a 32bit int
-      sig << StateTy;
-      sig << ctx_->Int32Ty;
 
-      // the actual values of which are the calling arguments
-      Value* call_args[] = {
-        state_,
-        cint(which)
-      };
+      Object** addr;
 
-      // call the function we just described using the builder
-      CallInst* val = sig.call("rbx_push_system_object", call_args, 2, "so", b());
-      val->setOnlyReadsMemory();
-      val->setDoesNotThrow();
-      stack_push(val);
+      switch(which) {
+      case 0:
+        addr = llvm_state()->shared().globals.object.object_address();
+        break;
+      case 1:
+        addr = llvm_state()->shared().globals.rubinius.object_address();
+        break;
+      case 2:
+        addr = llvm_state()->shared().globals.type.object_address();
+        break;
+      case 3:
+        addr = llvm_state()->shared().globals.mirror.object_address();
+        break;
+      default:
+        rubinius::bug("invalid system object");
+      }
+
+      Value* l_addr = constant(addr, ObjArrayTy);
+      stack_push(b().CreateLoad(l_addr, "system_object"));
     }
 
     // visitors.
@@ -1115,11 +1120,11 @@ namespace rubinius {
         stack_push(constant(sym), type::KnownType::symbol(sym->index()));
       } else if(Fixnum* fix = try_as<Fixnum>(lit)) {
         stack_push(constant(fix), type::KnownType::fixnum(fix->to_native()));
-      } else if(lit == cTrue) {
+      } else if(lit->true_p()) {
         stack_push(constant(cTrue), type::KnownType::true_());
-      } else if(lit == cFalse) {
+      } else if(lit->false_p()) {
         stack_push(constant(cFalse), type::KnownType::false_());
-      } else if(lit == cNil) {
+      } else if(lit->nil_p()) {
         stack_push(constant(cNil), type::KnownType::nil());
       } else if(lit->reference_p()) {
         Class* klass = lit->klass();

@@ -284,7 +284,7 @@ namespace rubinius {
         GCTokenImpl gct;
         OnStack<1> os(state, env);
         ls->compile_soon(state, gct, env->compiled_code(), previous,
-                         invocation.self->lookup_begin(state), env, true);
+                         invocation.self->direct_class(state), env, true);
 
       } else {
         mcode->call_count++;
@@ -460,7 +460,7 @@ namespace rubinius {
 
   Object* BlockEnvironment::of_sender(STATE, CallFrame* call_frame) {
     if(NativeMethodFrame* nmf = call_frame->previous->native_method_frame()) {
-      return NativeMethodEnvironment::get()->get_object(nmf->block());
+      return state->vm()->native_method_environment->get_object(nmf->block());
     }
 
     CallFrame* target = call_frame->previous->top_ruby_frame();

@@ -74,7 +74,7 @@ namespace rubinius {
   namespace ontology {
     Class* new_basic_class(STATE, Class* sup) {
       Class *cls = state->memory()->new_object_enduring<Class>(state, G(klass));
-      cls->init(state->shared().inc_class_count(state));
+      cls->init(state);
 
       if(sup->nil_p()) {
         cls->instance_type(state, Fixnum::from(ObjectType));
@@ -136,7 +136,7 @@ namespace rubinius {
     cls->ivars(state, cNil);
 
     cls->set_object_type(state, ClassType);
-    cls->set_class_id(state->shared().inc_class_count(state));
+    cls->init(state);
     cls->set_packed_size(0);
 
     // Set Class into the globals
@@ -240,10 +240,10 @@ namespace rubinius {
 
     // See?
     if(!LANGUAGE_18_ENABLED) {
-      assert(basicobject->superclass() == cNil);
+      assert(basicobject->superclass()->nil_p());
       assert(object->superclass() == basicobject);
     } else {
-      assert(object->superclass() == cNil);
+      assert(object->superclass()->nil_p());
       assert(object->klass()->superclass() == cls);
     }
 
@@ -484,8 +484,6 @@ namespace rubinius {
       G(rubinius)->set_const(state, "LIB_PATH", String::create(state, path.c_str()));
       path = prefix + RBX_ENC_PATH;
       G(rubinius)->set_const(state, "ENC_PATH", String::create(state, path.c_str()));
-      path = prefix + RBX_SITE_PATH;
-      G(rubinius)->set_const(state, "SITE_PATH", String::create(state, path.c_str()));
       path = prefix + RBX_VENDOR_PATH;
       G(rubinius)->set_const(state, "VENDOR_PATH", String::create(state, path.c_str()));
       path = prefix + RBX_GEMS_PATH;
@@ -515,6 +513,9 @@ namespace rubinius {
       G(rubinius)->set_const(state, "RUBY_LIB_VERSION", Fixnum::from(18));
     }
     G(rubinius)->set_const(state, "LIBC", String::create(state, RBX_LIBC));
+
+    G(rubinius)->set_const(state, "HAVE_LCHMOD", RBX_HAVE_LCHMOD ? cTrue : cFalse);
+    G(rubinius)->set_const(state, "HAVE_LCHOWN", RBX_HAVE_LCHOWN ? cTrue : cFalse);
 
 #ifdef RBX_LITTLE_ENDIAN
     G(rubinius)->set_const(state, "ENDIAN", state->symbol("little"));

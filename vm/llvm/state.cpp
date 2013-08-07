@@ -342,7 +342,8 @@ namespace rubinius {
 
           jit.compile(req);
 
-          func = jit.generate_function();
+          bool indy = !ls_->config().jit_sync;
+          func = jit.generate_function(indy);
         }
 
         // We were unable to compile this function, likely
@@ -618,7 +619,7 @@ halt:
       return;
     }
 
-    int hits = code->machine_code()->call_count;
+    int hits = code->machine_code()->method_call_count();
     code->machine_code()->set_compiling();
 
     BackgroundCompileRequest* req =
@@ -645,6 +646,7 @@ halt:
         llvm::outs() << "[[[ JIT compiled "
           << enclosure_name(code) << "#" << symbol_debug_str(code->name())
           << (req_block ? " (block) " : " (method) ")
+          << " (" << hits << ") "
           << queued_methods() << "/"
           << jitted_methods() << " ]]]\n";
       }
@@ -655,6 +657,7 @@ halt:
         llvm::outs() << "[[[ JIT queued "
           << enclosure_name(code) << "#" << symbol_debug_str(code->name())
           << (req->is_block() ? " (block) " : " (method) ")
+          << " (" << hits << ") "
           << queued_methods() << "/"
           << jitted_methods() << " ]]]\n";
       }
@@ -712,11 +715,11 @@ halt:
 
     if(candidate->block_p()) {
       compile_soon(state, gct, candidate->compiled_code, call_frame,
-                   candidate->self()->lookup_begin(state), candidate->block_env(), true);
+                   candidate->self()->direct_class(state), candidate->block_env(), true);
     } else {
       if(candidate->compiled_code->can_specialize_p()) {
         compile_soon(state, gct, candidate->compiled_code, call_frame,
-                     candidate->self()->lookup_begin(state));
+                     candidate->self()->direct_class(state));
       } else {
         compile_soon(state, gct, candidate->compiled_code, call_frame, NULL);
       }

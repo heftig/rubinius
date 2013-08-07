@@ -318,10 +318,12 @@ module Rubinius
       end
 
       def bytecode(g)
+        g.state.check_for_locals = false
         map_arguments g.state.scope
 
         @defaults.bytecode(g) if @defaults
         @block_arg.bytecode(g) if @block_arg
+        g.state.check_for_locals = true
       end
 
       def required_args
@@ -437,11 +439,17 @@ module Rubinius
           splat = nil
         end
 
+        @post = []
         if post
-          names.concat post
-          @post = post
-        else
-          @post = []
+          post.each do |arg|
+            case arg
+            when MultipleAssignment
+              @post << PatternArguments.from_masgn(arg)
+            when Symbol
+              @post << arg
+              names << arg
+            end
+          end
         end
 
         if block
@@ -491,11 +499,22 @@ module Rubinius
 
         @defaults.map_arguments scope if @defaults
         scope.new_local @splat if @splat.kind_of? Symbol
-        @post.each { |arg| scope.new_local arg }
+
+        @post.each do |arg|
+          case arg
+          when PatternArguments
+            arg.map_arguments scope
+          when Symbol
+            scope.new_local arg
+          end
+        end
+
         scope.assign_local_reference @block_arg if @block_arg
+
       end
 
       def bytecode(g)
+        g.state.check_for_locals = false
         map_arguments g.state.scope
 
         @required.each do |arg|
@@ -505,9 +524,16 @@ module Rubinius
             g.pop
           end
         end
-
         @defaults.bytecode(g) if @defaults
         @block_arg.bytecode(g) if @block_arg
+        @post.each do |arg|
+          if arg.kind_of? PatternArguments
+            arg.argument.position_bytecode(g)
+            arg.bytecode(g)
+            g.pop
+          end
+        end
+        g.state.check_for_locals = true
       end
     end
 
@@ -516,12 +542,41 @@ module Rubinius
 
       def self.from_masgn(node)
         array = []
-        node.left.body.map do |n|
+        size = 0
+        if node.left
+          size += node.left.body.size
+          node.left.body.map do |n|
+            case n
+            when MultipleAssignment
+              array << PatternArguments.from_masgn(n)
+            when LocalVariable
+              array << LeftPatternVariable.new(n.line, n.name)
+            end
+          end
+        end
+
+        if node.post
+          idx = 0
+          post_args = []
+          node.post.body.map do |n|
+            case n
+            when MultipleAssignment
+              post_args << PatternArguments.from_masgn(n)
+            when LocalVariable
+              post_args << PostPatternVariable.new(n.line, n.name, idx)
+            end
+            idx += 1
+          end
+          array.concat(post_args.reverse)
+        end
+
+        if node.splat
+          n = node.splat
           case n
-          when MultipleAssignment
-            array << PatternArguments.from_masgn(n)
-          when LocalVariable
-            array << PatternVariable.new(n.line, n.name)
+          when EmptySplat
+            array << SplatPatternVariable.new(n.line, :*)
+          when SplatAssignment, SplatWrapped, SplatArray
+            array << SplatPatternVariable.new(n.value.line, n.value.name)
           end
         end
 
@@ -541,7 +596,8 @@ module Rubinius
         arguments = @arguments.body
         while arguments
           node = arguments.first
-          if node.kind_of? PatternVariable
+          case node
+          when LeftPatternVariable, PostPatternVariable, SplatPatternVariable
             @argument = node
             scope.new_local node.name
             scope.assign_local_reference node

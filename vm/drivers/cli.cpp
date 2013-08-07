@@ -109,7 +109,6 @@ int main(int argc, char** argv) {
       std::cerr << "  RUNTIME_PATH: " << RBX_RUNTIME_PATH << std::endl;
       std::cerr << "   KERNEL_PATH: " << RBX_KERNEL_PATH << std::endl;
       std::cerr << "      LIB_PATH: " << RBX_LIB_PATH << std::endl;
-      std::cerr << "     SITE_PATH: " << RBX_SITE_PATH << std::endl;
       std::cerr << "   VENDOR_PATH: " << RBX_VENDOR_PATH << std::endl;
       std::cerr << "     GEMS_PATH: " << RBX_GEMS_PATH << std::endl;
       std::cerr << std::endl;
@@ -131,8 +130,8 @@ int main(int argc, char** argv) {
       exit_code = 1;
     }
 
+    env.halt(env.state);
     if(!exit_code) {
-      env.halt(env.state);
       exit_code = env.exit_code(env.state);
     }
   }

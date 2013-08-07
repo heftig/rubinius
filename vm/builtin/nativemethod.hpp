@@ -47,9 +47,6 @@ namespace rubinius {
     /** Create or retrieve VALUE for obj. */
     VALUE get_handle(Object* obj);
 
-    /** Delete a global Object and its VALUE. */
-    void delete_global(VALUE handle);
-
     /** GC marking for Objects behind VALUEs. */
     void mark_handles(ObjectMark& mark);
 
@@ -63,7 +60,7 @@ namespace rubinius {
     }
 
     /** Obtain the Object the VALUE represents. */
-    Object* get_object(VALUE val) {
+    inline Object* get_object(VALUE val) const {
       if(REFERENCE_P(val)) {
         capi::Handle* handle = capi::Handle::from(val);
         if(!handle->valid_p()) {
@@ -148,6 +145,8 @@ namespace rubinius {
      *  @note This is rarely the direct caller. */
     NativeMethodFrame* previous_;
 
+    NativeMethodEnvironment* env_;
+
     /** HandleSet to Objects used in this Frame. */
     capi::HandleSet handles_;
 
@@ -167,7 +166,7 @@ namespace rubinius {
     VALUE method_;
 
   public:
-    NativeMethodFrame(NativeMethodFrame* prev, NativeMethod* method);
+    NativeMethodFrame(NativeMethodEnvironment* env, NativeMethodFrame* prev, NativeMethod* method);
     ~NativeMethodFrame();
 
   public:     /* Interface methods */

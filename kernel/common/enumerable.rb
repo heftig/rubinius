@@ -10,14 +10,16 @@ module Enumerable
     ary = []
 
     if block_given?
-      each do |o|
+      each do
+        o = Rubinius.single_block_arg
         if pattern === o
           Regexp.set_block_last_match
           ary << yield(o)
         end
       end
     else
-      each do |o|
+      each do
+        o = Rubinius.single_block_arg
         if pattern === o
           Regexp.set_block_last_match
           ary << o
@@ -113,18 +115,6 @@ module Enumerable
       each { return true if Rubinius.single_block_arg }
     end
     false
-  end
-
-  def count(item = undefined)
-    seq = 0
-    if !undefined.equal?(item)
-      each { |o| seq += 1 if item == o }
-    elsif block_given?
-      each { |o| seq += 1 if yield(o) }
-    else
-      each { seq += 1 }
-    end
-    seq
   end
 
   def cycle(many=nil)

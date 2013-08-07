@@ -14,7 +14,7 @@ class String
 
   def self.allocate
     str = __allocate__
-    str.__data__ = Rubinius::ByteArray.new(1)
+    str.__data__ = Rubinius::ByteArray.allocate_sized(1)
     str.num_bytes = 0
     str
   end
@@ -131,7 +131,7 @@ class String
       Regexp.last_match = match_data
       if match_data
         result = match_data.to_s
-        result.taint if index.tainted?
+        Rubinius::Type.infect result, index
         return result
       end
     when String
@@ -603,50 +603,6 @@ class String
     left.nil? && right.nil? ? nil : self
   end
 
-  def sub(pattern, replacement=undefined)
-    if undefined.equal?(replacement) and !block_given?
-      raise ArgumentError, "wrong number of arguments (1 for 2)"
-    end
-
-    unless pattern
-      raise ArgumentError, "wrong number of arguments (0 for 2)"
-    end
-
-    if match = Rubinius::Type.coerce_to_regexp(pattern, true).match_from(self, 0)
-      out = match.pre_match
-
-      Regexp.last_match = match
-
-      if undefined.equal?(replacement)
-        replacement = yield(match[0].dup).to_s
-        out.taint if replacement.tainted?
-        out.append(replacement).append(match.post_match)
-      else
-        out.taint if replacement.tainted?
-        StringValue(replacement).to_sub_replacement(out, match)
-        out.append(match.post_match)
-      end
-
-      # We have to reset it again to match the specs
-      Regexp.last_match = match
-
-      out.taint if self.tainted?
-    else
-      out = self
-      Regexp.last_match = nil
-    end
-
-    # MRI behavior emulation. Sub'ing String subclasses doen't return the
-    # subclass, they return String instances.
-    unless instance_of?(String)
-      # Do this instead of using self.class.new because some code
-      # (ActiveModel) redefines initialize and breaks it.
-      Rubinius::Unsafe.set_class out, self.class
-    end
-
-    return out
-  end
-
   def succ
     dup.succ!
   end
@@ -786,6 +742,25 @@ class String
                   match[cap - 48].to_s
                 when 92 # ?\\ escaped backslash
                   '\\'
+                when 107 # \k named capture
+                  if @data[index + 1] == 60
+                    name = ""
+                    i = index + 2
+                    while i < @data.size && @data[i] != 62
+                      name << @data[i]
+                      i += 1
+                    end
+                    if i >= @data.size
+                      '\\'.append(cap.chr)
+                      index += 1
+                      next
+                    end
+                    index = i
+                    name.force_encoding result.encoding
+                    match[name]
+                  else
+                    '\\'.append(cap.chr)
+                  end
                 else     # unknown escape
                   '\\'.append(cap.chr)
                 end
@@ -816,20 +791,26 @@ class String
   def count_table(*strings)
     table = String.pattern 256, 1
 
-    i, size = 0, strings.size
+    i = 0
+    size = strings.size
     while i < size
       str = StringValue(strings[i]).dup
-      if str.size > 1 && str.getbyte(0) == 94 # ?^
-        pos, neg = 0, 1
+      if str.bytesize > 1 && str.getbyte(0) == 94 # ?^
+        pos = 0
+        neg = 1
         str.slice!(0)
       else
-        pos, neg = 1, 0
+        pos = 1
+        neg = 0
       end
 
       set = String.pattern 256, neg
+      set_data = set.__data__
       str.tr_expand! nil, true
-      j, chars = -1, str.bytesize
-      set.setbyte(str.getbyte(j), pos) while (j += 1) < chars
+      str_data = str.__data__
+      j = -1
+      chars = str.bytesize
+      set_data[str_data[j]] = pos while (j += 1) < chars
 
       table.apply_and! set
       i += 1
@@ -866,7 +847,7 @@ class String
     end
 
     str = match[capture]
-    str.taint if pattern.tainted?
+    Rubinius::Type.infect str, pattern
     [match, str]
   end
   private :subpattern

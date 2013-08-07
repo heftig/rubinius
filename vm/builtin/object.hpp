@@ -20,7 +20,7 @@ namespace rubinius {
  */
 #define attr_writer(name, type) \
   template <class T> \
-  void name(T state, type* obj) { \
+  inline void name(T state, type* obj) { \
     name ## _ = obj; \
     this->write_barrier(state, obj); \
   }
@@ -32,7 +32,7 @@ namespace rubinius {
  *  instance variable foo_. A const version is also generated.
  */
 #define attr_reader(name, type) \
-  type* name() const { return name ## _; }
+  inline type* name() const { return name ## _; }
 
 /**
  *  Ruby-like accessor creation for a slot.
@@ -159,8 +159,11 @@ namespace rubinius {
 
   public:   /* Method dispatch stuff */
 
-    /** Class object in which to look for the MethodTable for this Object. */
-    Class*      lookup_begin(STATE);
+    /** Actual class for this object. Also handles immediates */
+    Class*       direct_class(STATE) const;
+
+    /** Module where to start looking for the MethodTable for this Object. */
+    Module*      lookup_begin(STATE) const;
 
     /**
      *  Directly send a method to this Object.
@@ -259,7 +262,7 @@ namespace rubinius {
     /** Reset the object id */
     void reset_id(STATE);
 
-    // Rubinius.primitive :object_infect
+    // Rubinius.primitive+ :object_infect
     Object* infect_prim(STATE, Object* obj, Object* other) {
       other->infect(state, obj);
       return obj;
@@ -391,7 +394,15 @@ namespace rubinius {
   public:   /* accessors */
 
     /* klass_ from ObjectHeader. */
-    attr_accessor(klass, Class);
+    attr_reader(klass, Class);
+
+    template <class T>
+      inline void klass(T state, Class* cls) {
+        if(klass_ != cls) {
+          klass_ = cls;
+          this->write_barrier(state, cls);
+        }
+      }
 
     /* ivars_ from ObjectHeader. */
     attr_accessor(ivars, Object);
@@ -419,12 +430,16 @@ namespace rubinius {
     return __FIXNUM_P__(this);
   }
 
-  inline Class* Object::lookup_begin(STATE) {
+  inline Class* Object::direct_class(STATE) const {
     if(reference_p()) {
       return klass_;
     }
 
     return state->globals().special_classes[((uintptr_t)this) & SPECIAL_CLASS_MASK].get();
+  }
+
+  inline Module* Object::lookup_begin(STATE) const {
+    return reinterpret_cast<Module*>(direct_class(state));
   }
 
   inline bool Object::symbol_p() const {

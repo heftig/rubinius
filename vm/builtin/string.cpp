@@ -82,8 +82,6 @@ namespace rubinius {
 
     native_int bytes = size->to_native() + 1;
     ByteArray* ba = ByteArray::create(state, bytes);
-    ba->raw_bytes()[bytes-1] = 0;
-
     so->data(state, ba);
 
     return so;
@@ -105,16 +103,12 @@ namespace rubinius {
 
     native_int bytes = size->to_native() + 1;
     ByteArray* ba = ByteArray::create_pinned(state, bytes);
-    ba->raw_bytes()[bytes-1] = 0;
 
     so->data(state, ba);
 
     return so;
   }
 
-  /* +bytes+ should NOT attempt to take the trailing null into account
-   * +bytes+ is the number of 'real' characters in the string
-   */
   String* String::create(STATE, const char* str) {
     if(!str) return String::create(state, Fixnum::from(0));
 
@@ -128,9 +122,7 @@ namespace rubinius {
    */
   String* String::create(STATE, const char* str, native_int bytes) {
 
-    String *so;
-
-    so = state->new_object_dirty<String>(G(string));
+    String* so = state->new_object_dirty<String>(G(string));
 
     so->num_bytes_      = Fixnum::from(bytes);
     so->num_chars_      = nil<Fixnum>();
@@ -193,7 +185,7 @@ namespace rubinius {
     capi::Handle* handle = this->handle(state);
     if(!handle) return;
 
-    handle->update(NativeMethodEnvironment::get());
+    handle->update(state->vm()->native_method_environment);
   }
 
   static bool byte_compatible_p(Encoding* enc) {
@@ -609,7 +601,7 @@ namespace rubinius {
 
   native_int String::char_size(STATE) {
     if(num_chars_->nil_p()) {
-      if(byte_compatible_p(encoding_)) {
+      if(byte_compatible_p(encoding_) || CBOOL(ascii_only_)) {
         num_chars(state, num_bytes_);
       } else {
         OnigEncodingType* enc = encoding(state)->get_encoding();
@@ -808,14 +800,17 @@ namespace rubinius {
     native_int length = other->byte_size();
     native_int data_length = as<ByteArray>(other->data_)->size();
 
-    if (encoding() != other->encoding()) {
+    if(encoding() != other->encoding()) {
       Encoding* new_encoding = Encoding::compatible_p(state, this, other);
       if(new_encoding->nil_p()) {
         Exception::encoding_compatibility_error(state, other, this);
       }
-      ascii_only(state, cNil);
       valid_encoding(state, cNil);
       encoding(state, new_encoding);
+    }
+
+    if(CBOOL(ascii_only_) && !CBOOL(other->ascii_only_p(state))) {
+      ascii_only(state, cFalse);
     }
 
     if(unlikely(length > data_length)) {
@@ -836,6 +831,9 @@ namespace rubinius {
 
     if(unlikely(length > data_length)) {
       length = data_length;
+    }
+    if(!other->ascii_only()->true_p()) {
+      ascii_only_ = cNil;
     }
     return append(state,
                   reinterpret_cast<const char*>(other->byte_address()),
@@ -1440,11 +1438,9 @@ namespace rubinius {
       length = data_size - index;
     }
 
-    String* sub = String::create(state, Fixnum::from(length));
+    const char* buf = (const char*)byte_address() + index;
+    String* sub = String::create(state, buf, length);
     sub->klass(state, class_object(state));
-
-    uint8_t* buf = byte_address() + index;
-    memcpy(sub->byte_address(), buf, length);
 
     if(tainted_p(state)->true_p()) sub->taint(state);
     if(untrusted_p(state)->true_p()) sub->untrust(state);

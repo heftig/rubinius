@@ -89,6 +89,8 @@ class Configure
     @x86_64       = false
     @fibers       = false
     @dtrace       = false
+    @have_lchmod  = false
+    @have_lchown  = false
     @include_dirs = []
     @lib_dirs     = []
 
@@ -127,7 +129,7 @@ class Configure
     @patch_version = "0"
     @release = validate_release_label
     @release_date = validate_release_date
-    @config_version = 178
+    @config_version = 179
   end
 
   # Set up system commands to run in cmd.exe on Windows. Either Windows
@@ -191,12 +193,6 @@ class Configure
       @kerneldir  = dir + "/kernel"
       @sitedir    = dir + "/site"
       @vendordir  = dir + "/vendor"
-
-      if @prefixdir == @sourcedir
-        @encdir = "/lib/#{@language_version}"
-      else
-        @encdir = "/lib"
-      end
     end
 
     @bindir       = @prefixdir + "/bin" unless @bindir
@@ -216,18 +212,16 @@ class Configure
       end
     end
 
-    unless @encdir
-      if @prefixdir == @sourcedir
-        @encdir = "/lib/#{@language_version}"
-      else
-        @encdir = "/lib"
-      end
+    if @prefixdir == @sourcedir
+      @encdir = @libdir + "/#{@language_version}"
+    else
+      @encdir = @libdir
     end
 
     @encdir += "/encoding/converter"
 
     dirs = [@bindir, @libdir, @runtimedir, @kerneldir, @sitedir, @vendordir,
-            @mandir, @gemsdir, @includedir]
+            @mandir, @gemsdir, @includedir, @encdir]
 
     parts = dirs.map { |d| d.split "/" }
 
@@ -249,6 +243,7 @@ class Configure
 
     unless @prefixdir == @sourcedir
       @stagingdir = "#{@sourcedir}/staging"
+      FileUtils.rm_rf @stagingdir
       @stagingdir = File.join @stagingdir, @prefixdir if @preserve_prefix
     end
   end
@@ -290,7 +285,7 @@ class Configure
 
     o.doc "\n Language version settings"
 
-    o.on "--enable-version", "VERSION", "Enable Ruby VERSION (supported 1.8, 1.9, 2.0)" do |v|
+    o.on "--enable-version", "VERSION", "Enable Ruby VERSION (supported 18, 19, 20)" do |v|
       @language_version = normalize_version v
     end
 
@@ -398,6 +393,7 @@ class Configure
     o.doc "\n File system paths for installing Rubinius"
 
     o.on "-P", "--prefix", "PATH", "Install Rubinius in subdirectories of PATH" do |dir|
+      warn_prefix dir
       @prefixdir = dir
     end
 
@@ -1201,8 +1197,8 @@ int main() { return tgetnum(""); }
     end
   end
 
-  def has_function(name, includes=[])
-    compile_check "function '#{name}'" do |src|
+  def has_function(name, includes=[], defines = [])
+    compile_check "function '#{name}'", defines do |src|
       includes.each do |i|
         src.puts "#include <#{i}>"
       end
@@ -1246,7 +1242,7 @@ int main() { return tgetnum(""); }
     end
   end
 
-  def compile_check(logpart, &block)
+  def compile_check(logpart, defines = [], &block)
     @log.print "Checking for #{logpart}: "
 
     source = StringIO.new
@@ -1261,7 +1257,7 @@ int main() { return tgetnum(""); }
 
     @log.log string
 
-    cmd = "#{@cxx} -S -o - -x c #{@user_cppflags} #{@user_cxxflags} #{@user_cflags} #{@user_ldflags} #{@system_cppflags} #{@system_cxxflags} #{@system_cflags} #{@system_ldflags} #{file.path} >>#{@log.path} 2>&1"
+    cmd = "#{@cxx} -S -o - -x c #{defines.join(" ")} #{@user_cppflags} #{@user_cxxflags} #{@user_cflags} #{@user_ldflags} #{@system_cppflags} #{@system_cxxflags} #{@system_cflags} #{@system_ldflags} #{file.path} >>#{@log.path} 2>&1"
     @log.log cmd
     system cmd
 
@@ -1355,6 +1351,14 @@ int main() { return tgetnum(""); }
     if has_function("posix_fadvise", ["fcntl.h"])
       @defines << "HAVE_POSIX_FADVISE"
     end
+
+    if has_function("lchmod", ["sys/stat.h", "unistd.h"], ["-D_XOPEN_SOURCE", "-D_XOPEN_SOURCE_EXTENDED"])
+      @have_lchmod = true
+    end
+
+    if has_function("lchown", ["sys/stat.h", "unistd.h"], ["-D_XOPEN_SOURCE", "-D_XOPEN_SOURCE_EXTENDED"])
+      @have_lchown = true
+    end
   end
 
   def detect_structures
@@ -1444,6 +1448,26 @@ int main() { return tgetnum(""); }
       @log.write "yes"
     else
       @log.write "no"
+    end
+  end
+
+  def warn_prefix(dir)
+    delimiter = "-------------------------%s-----------------------"
+
+    if File.file? dir
+      @log.write delimiter % " ERROR "
+      @log.write "The specified prefix '#{dir}' is a regular file."
+      @log.write "Remove the file or specify a different prefix."
+      @log.write delimiter % "-------"
+      exit 1
+    elsif File.directory? dir
+      @log.write delimiter % " WARNING "
+      @log.write "The specified prefix '#{dir}' already exists."
+      @log.write "Installing Rubinius into an existing directory may"
+      @log.write "overwrite existing unrelated files or cause conflicts"
+      @log.write "between different versions of Rubinius files."
+      @log.write delimiter % "---------"
+      sleep 2
     end
   end
 
@@ -1692,7 +1716,6 @@ int main() { return tgetnum(""); }
 #define RBX_LIB_PATH         "#{@libdir}"
 #define RBX_ENC_PATH         "#{@encdir}"
 #define RBX_HDR_PATH         "#{@includedir}"
-#define RBX_SITE_PATH        "#{@sitedir}"
 #define RBX_VENDOR_PATH      "#{@vendordir}"
       EOF
     end
@@ -1710,6 +1733,8 @@ int main() { return tgetnum(""); }
 #define RBX_SIZEOF_LONG      #{sizeof("long")}
 #define RBX_LLVM_API_VER     #{@llvm_api_version}
 #define RBX_LIBC             "#{@libc}"
+#define RBX_HAVE_LCHMOD      #{@have_lchmod}
+#define RBX_HAVE_LCHOWN      #{@have_lchown}
       EOC
 
       if @little_endian
@@ -1765,6 +1790,10 @@ int main() { return tgetnum(""); }
 
 #ifndef NORETURN
 #define NORETURN(x) __attribute__ ((noreturn)) x
+#endif
+
+#ifndef UNREACHABLE
+#define UNREACHABLE __builtin_unreachable()
 #endif
 
       EOC

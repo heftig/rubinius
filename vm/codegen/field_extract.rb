@@ -9,18 +9,9 @@ class BasicPrimitive
   attr_accessor :safe
   attr_accessor :can_fail
 
-  def emit_counter
-    @@counter ||= 0
-    str = "  check_counter(state, call_frame, #{@@counter});\n"
-    @@counter += 1
-    return str
-  end
-
   def output_header(str)
     str << "Object* Primitives::#{@name}(STATE, CallFrame* call_frame, Executable* exec, Module* mod, Arguments& args) {\n"
     str << "  state->set_call_frame(call_frame);\n"
-    str << emit_counter
-    # str << " std::cout << \"[Primitive #{@name}]\\n\";\n"
     str << "  Object* ret;\n"
     return str if @raw
     str << "  Object* self;\n" if @pass_self
@@ -798,17 +789,17 @@ void #{@name}::Info::auto_mark(Object* _t, ObjectMark& mark) {
   def kind_of_code(what)
     case @name
     when "Fixnum"
-      return "__FIXNUM_P__(#{what})"
+      return "#{what}->fixnum_p()"
     when "Symbol"
-      return "__SYMBOL_P__(#{what})"
+      return "#{what}->symbol_p()"
     when "TrueClass"
-      return "#{what} == cTrue"
+      return "#{what}->true_p()"
     when "FalseClass"
-      return "#{what} == cFalse"
+      return "#{what}->false_p()"
     when "NilClass"
-      return "#{what} == cNil"
+      return "#{what}->nil_p()"
     else
-      return "(__REFERENCE_P__(#{what}) && #{what}->type_id() == #{@name}Type)"
+      return "(#{what}->reference_p() && #{what}->type_id() == #{@name}Type)"
     end
   end
 

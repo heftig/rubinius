@@ -16,7 +16,10 @@ module Enumerable
       @args = args
       @generator = nil
       @lookahead = []
+
+      self
     end
+    private :initialize
 
     def with_index(offset=0)
       if offset
@@ -57,7 +60,12 @@ module Enumerable
       rescue StopIteration
       end
 
-      raise StopIteration, "iteration reached end"
+      exception = StopIteration.new "iteration reached end"
+      Rubinius.privately do
+        exception.result = @generator.result
+      end
+
+      raise exception
     end
 
     def next_values
@@ -87,7 +95,10 @@ module Enumerable
         raise LocalJumpError, "Expected a block to be given" unless block_given?
 
         @proc = block
+
+        self
       end
+      private :initialize
 
       def yield(*args)
         @proc.call *args
@@ -106,7 +117,10 @@ module Enumerable
         raise LocalJumpError, "Expected a block to be given" unless block_given?
 
         @proc = block
+
+        self
       end
+      private :initialize
 
       def each
         enclosed_yield = Proc.new { |*args| yield *args }

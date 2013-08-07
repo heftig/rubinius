@@ -245,7 +245,7 @@ namespace rubinius {
 
         Object** baa = reinterpret_cast<Object**>(pointer_to_body());
         Object* obj = baa[which->to_native()];
-        if(obj == cUndef) return cNil;
+        if(obj->undef_p()) return cNil;
         return obj;
       }
     default:
@@ -432,13 +432,7 @@ namespace rubinius {
   }
 
   bool Object::kind_of_p(STATE, Object* module) {
-    Module* found = NULL;
-
-    if(!reference_p()) {
-      found = state->globals().special_classes[((uintptr_t)this) & SPECIAL_CLASS_MASK].get();
-    } else {
-      found = try_as<Module>(klass_);
-    }
+    Module* found = lookup_begin(state);
 
     while(found) {
       if(found == module) return true;
@@ -741,7 +735,9 @@ namespace rubinius {
     } else {
       name << "#<";
       if(Module* mod = try_as<Module>(this)) {
-        if(mod->module_name()->nil_p()) {
+        if(IncludedModule* im = try_as<IncludedModule>(mod)) {
+          name << im->module()->module_name()->debug_str(state);
+        } else if(mod->module_name()->nil_p()) {
           name << "Class";
         } else {
           name << mod->debug_str(state);

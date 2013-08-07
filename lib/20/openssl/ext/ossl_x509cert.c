@@ -1,5 +1,5 @@
 /*
- * $Id: ossl_x509cert.c 32993 2011-08-16 21:46:32Z emboss $
+ * $Id$
  * 'OpenSSL for Ruby' project
  * Copyright (C) 2001-2002  Michal Rokos <m.rokos@sh.cvut.cz>
  * All rights reserved.
@@ -66,6 +66,7 @@ ossl_x509_new_from_file(VALUE filename)
     if (!(fp = fopen(RSTRING_PTR(filename), "r"))) {
 	ossl_raise(eX509CertError, "%s", strerror(errno));
     }
+    rb_update_max_fd(fileno(fp));
     x509 = PEM_read_X509(fp, NULL, NULL, NULL);
     /*
      * prepare for DER...
@@ -489,7 +490,7 @@ ossl_x509_get_not_after(VALUE self)
 
 /*
  * call-seq:
- *    cert.not_before = time => time
+ *    cert.not_after = time => time
  */
 static VALUE
 ossl_x509_set_not_after(VALUE self, VALUE time)
@@ -829,9 +830,6 @@ Init_ossl_x509cert()
      *   cert.sign(root_key, OpenSSL::Digest::SHA256.new)
      *
      */
-
-    eX509CertError = rb_define_class_under(mX509, "CertificateError", eOSSLError);
-
     cX509Cert = rb_define_class_under(mX509, "Certificate", rb_cObject);
 
     rb_define_alloc_func(cX509Cert, ossl_x509_alloc);

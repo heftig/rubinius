@@ -575,9 +575,13 @@ namespace rubinius {
     state->shared().stats.methods_cache_resets++;
 
     if(state->shared().config.ic_debug) {
-      std::cout << "[IC Increase serial for " << mod->get_name(state)->c_str(state) << "]" << std::endl;
+      String* mod_name = mod->get_name(state);
+      if(mod_name->nil_p()) {
+        mod_name = String::create(state, "");
+      }
+      std::cout << "[IC Increase serial for " << mod_name->c_str(state) << "]" << std::endl;
 
-      std::cout << "[IC Reset method cache for " << mod->get_name(state)->c_str(state)
+      std::cout << "[IC Reset method cache for " << mod_name->c_str(state)
                 << "#" << name->debug_str(state).c_str() << "]" << std::endl;
       CallFrame* call_frame = calling_environment->previous;
       call_frame->print_backtrace(state, 6, true);
@@ -914,10 +918,10 @@ namespace rubinius {
     return module;
   }
 
-  static Tuple* find_method(STATE, Class* klass, Symbol* name, Symbol* min_visibility) {
+  static Tuple* find_method(STATE, Module* lookup_begin, Symbol* name, Symbol* min_visibility) {
     // Use cUndef for the self type so protected checks never pass
     // and work as expected.
-    LookupData lookup(cUndef, klass, min_visibility);
+    LookupData lookup(cUndef, lookup_begin, min_visibility);
 
     Dispatch dis(name);
 
@@ -1031,8 +1035,8 @@ namespace rubinius {
     return cNil;
   }
 
-  Object* System::vm_object_respond_to(STATE, Object* obj, Symbol* name) {
-    return obj->respond_to(state, name, cFalse);
+  Object* System::vm_object_respond_to(STATE, Object* obj, Symbol* name, Object* include_private) {
+    return obj->respond_to(state, name, include_private);
   }
 
   Object* System::vm_object_equal(STATE, Object* a, Object* b) {
@@ -1274,9 +1278,7 @@ namespace rubinius {
   Object* System::vm_check_callable(STATE, Object* obj, Symbol* sym,
                                     Object* self, CallFrame* calling_environment)
   {
-    Class* recv_class = obj->lookup_begin(state);
-
-    LookupData lookup(self, recv_class, G(sym_public));
+    LookupData lookup(self, obj->lookup_begin(state), G(sym_public));
     Dispatch dis(sym);
 
     Object* responds = RBOOL(dis.resolve(state, sym, lookup));
